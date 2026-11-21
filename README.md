@@ -4,7 +4,9 @@ Real chess on a battlefield. Every soldier walks to its square, and every captur
 
 Inspired by the animated "battle chess" games of the late-80s DOS era, with original characters and art.
 
-**Play:** open `index.html` in any modern browser. It's a single file with no install, build step or dependencies.
+**Play online:** https://jpashami.github.io/warboard-chess/
+
+**Play offline:** open `index.html` in any modern browser. It's a single file with no install, build step or dependencies.
 
 ## Armies
 
@@ -34,3 +36,7 @@ Everything is in `index.html`:
 - **Sound**: Web Audio API, all synthesized.
 
 The engine also runs under Node (`module.exports = { Chess }`) for testing.
+
+## License
+
+[MIT](LICENSE)
