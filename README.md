@@ -33,6 +33,10 @@ Inspired by the animated "battle chess" games of the late-80s DOS era, with orig
 - Original music composed in code: a calm lute-and-flute camp theme while you think, switching to a war theme (taiko drums, strings, brass) during duels. Separate toggles for music and effects, plus a volume slider.
 - Synthesized sound effects with hall reverb: ringing blade clashes, war horn, grunts, crowd cheers, undo, move list, captured pieces, option to skip battle animations.
 
+## 3D prototype
+
+A preview of a more realistic version lives at [`3d/`](https://jpashami.github.io/warboard-chess/3d/): a lit 3D battlefield (Three.js) with shadows, metal and cloth materials, and two choreographed duels: a mounted knight leaping over his own line to fight an orc spearman, and a spearman duel. The characters are built from 3D shapes in code and baked into skinned meshes driven by bones, so there are no model files and it stays fast on phones. Only some pieces are modelled so far; it is not a playable game yet.
+
 ## How it's built
 
 Everything is in `index.html`:
