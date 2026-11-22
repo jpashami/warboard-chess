@@ -25,7 +25,10 @@ Inspired by the animated "battle chess" games of the late-80s DOS era, with orig
 - Computer opponent with three levels (Recruit, Captain, Warlord), or two players on one screen.
 - Orbit camera: drag to rotate and tilt, scroll to zoom, or use the Height / Rotate / Zoom sliders and Top-down / Battle / Reset presets.
 - Duels depend on who fights whom: the number of exchanges grows with the defender, underdogs get knocked down first, spellcasters trade spells in mid-air, and each attacker has its own finishing move (lance charge, trunk toss and stomp, battering ram, lightning, three-cut combo). Towers crumble instead of falling.
-- The camera zooms in on each battle. Battles can be set to full duels, quick, or off.
+- Transformations: siege towers unfold walking legs when they move or fight, Legion horses sprout wings and dive from the sky, Horde wolves swell into dire wolves, the sorceress becomes a phoenix, the king grows into a giant for one blow, an outmatched spearman drinks a potion and bulks up, and a mage may turn the enemy into a chicken that runs off the board.
+- Comic interludes between rounds: chases around the square, jousting charges, taunt dances, stumbles, with speech bubbles.
+- The camera zooms in on each battle. Battles can be set to full duels, epic duels, quick, or off.
+- Works on phones: full-width board, a floating status bar with Undo / rotate / menu, tap to move, drag to orbit, pinch to zoom.
 - Smooth high-resolution art (default) or a pixel-art style.
 - Synthesized sound effects, undo, move list, captured pieces, option to skip battle animations.
 

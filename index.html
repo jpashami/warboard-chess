@@ -50,13 +50,23 @@ label.tog{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mut
 select{font:inherit;font-size:13px;background:#323949;color:var(--text);border:1px solid #454d60;border-radius:6px;padding:5px 6px}
 canvas#board{touch-action:none}
 #moves{height:150px}
-@media (max-width:900px){#app{flex-direction:column;padding:10px}#panel{width:100%}}
+#hud{display:none;position:absolute;top:8px;left:8px;right:8px;align-items:center;gap:6px;background:rgba(15,17,23,.8);border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 5px 4px 12px;z-index:3;font-size:13px}
+#hud #hText{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hud button{padding:6px 12px;border-radius:999px;font-size:16px;line-height:1}
+details.cam summary{cursor:pointer;list-style:none}
+details.cam summary::-webkit-details-marker{display:none}
+details.cam summary::before{content:'▸ ';color:var(--gold)}
+details.cam[open] summary::before{content:'▾ '}
+button,select,input,summary{touch-action:manipulation}
+@media (max-width:900px){#app{flex-direction:column;align-items:stretch;padding:8px;gap:10px}#panel{width:100%}#hud{display:flex}.overlay{position:fixed;border-radius:0;z-index:50}canvas#board{border-radius:8px}#moves{height:120px}}
+@media (max-width:480px){#app{padding:6px}.card{padding:16px}.card h2{font-size:20px}.seg button{font-size:12px;padding:8px 4px}.promo button{width:56px;height:56px;font-size:32px}}
 </style>
 </head>
 <body>
 <div id="app">
   <div id="stage">
     <canvas id="board"></canvas>
+    <div id="hud"><span class="dot" id="hDot"></span><span id="hText">Choose your battle</span><button id="hUndo" title="Undo" aria-label="Undo">↶</button><button id="hFlip" title="Rotate the view" aria-label="Rotate the view">⟲</button><button id="hMenu" title="Menu" aria-label="Menu">☰</button></div>
 
     <div id="ovStart" class="overlay">
       <div class="card">
@@ -100,20 +110,24 @@ canvas#board{touch-action:none}
       <button id="bUndo">Undo</button>
       <button id="bFlip">Flip board</button>
     </div>
-    <div class="cam">
-      <div class="caplabel">Camera</div>
+    <details class="cam coll" open>
+      <summary class="caplabel">Camera</summary>
       <label class="sl"><span>Height</span><input type="range" id="cTilt" min="20" max="86" value="58"></label>
       <label class="sl"><span>Rotate</span><input type="range" id="cYaw" min="-180" max="180" value="0"></label>
       <label class="sl"><span>Zoom</span><input type="range" id="cZoom" min="60" max="200" value="100"></label>
       <div class="row3"><button id="vTop">Top-down</button><button id="vBattle">Battle</button><button id="vReset">Reset</button></div>
-      <div class="hint">Drag the board to orbit, scroll to zoom.</div>
-    </div>
+      <div class="hint">Drag to orbit. Scroll or pinch to zoom.</div>
+    </details>
+    <details class="cam coll" open>
+      <summary class="caplabel">Battle settings</summary>
+    <label class="tog"><input type="checkbox" id="tTrans" checked> Transformations</label>
     <label class="tog"><input type="checkbox" id="tEleph" checked> War elephants as bishops</label>
     <label class="tog"><input type="checkbox" id="tClose" checked> Zoom in on battles</label>
     <label class="tog"><input type="checkbox" id="tPixel"> Pixel-art style</label>
-    <label class="sl" style="grid-template-columns:auto 1fr;gap:8px"><span>Battles</span><select id="sFight"><option value="full">Full duels</option><option value="quick">Quick</option><option value="off">Off</option></select></label>
+    <label class="sl" style="grid-template-columns:auto 1fr;gap:8px"><span>Battles</span><select id="sFight"><option value="full">Full duels</option><option value="epic">Epic duels</option><option value="quick">Quick</option><option value="off">Off</option></select></label>
     <label class="tog"><input type="checkbox" id="tSound" checked> Sound</label>
-    <div class="hint">Click a soldier, then click a highlighted square. Silver Legion (humans) vs Iron Horde (orcs): spearmen = pawns, riders = knights, war elephants (or mages) = bishops, siege towers = rooks, sorceress = queen, crowned warlord = king.</div>
+    </details>
+    <div class="hint">Tap a soldier, then tap a highlighted square. Silver Legion (humans) vs Iron Horde (orcs): spearmen = pawns, riders = knights, war elephants (or mages) = bishops, siege towers = rooks, sorceress = queen, crowned warlord = king.</div>
   </aside>
 </div>
 
@@ -518,13 +532,24 @@ const SND = {
   check() { this.always(() => { this.tone(660, .12, 'square', .07); this.tone(880, .22, 'square', .07, null, .13); }); },
   promote() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, .25, 'triangle', .12, null, i * .09)); },
   win() { this.always(() => [392, 523, 659, 784, 1047].forEach((f, i) => this.tone(f, .35, 'square', .06, null, i * .13))); },
-  drawn() { this.always(() => [440, 392, 349].forEach((f, i) => this.tone(f, .4, 'triangle', .1, null, i * .2))); }
+  drawn() { this.always(() => [440, 392, 349].forEach((f, i) => this.tone(f, .4, 'triangle', .1, null, i * .2))); },
+  boing() { this.tone(260, .25, 'sine', .1, 760); },
+  trumpet() { this.tone(230, .55, 'sawtooth', .08, 560); this.tone(345, .55, 'square', .03, 760); },
+  roar() { this.tone(110, .5, 'sawtooth', .1, 65); this.noise(.45, .14, 500, 'bandpass'); },
+  transform() { this.tone(180, .5, 'sawtooth', .05, 720); this.tone(240, .5, 'triangle', .07, 960); this.noise(.35, .12, 2500, 'bandpass', .15); },
+  stomp() { this.tone(80, .2, 'sine', .3, 45); this.noise(.12, .2, 260, 'lowpass'); },
+  grow() { this.tone(70, .9, 'sawtooth', .08, 160); this.tone(140, .9, 'sine', .1, 320); },
+  potion() { [300, 260, 230].forEach((f, i) => this.tone(f, .12, 'sine', .14, f * .7, i * .14)); },
+  poof() { this.noise(.4, .25, 1800, 'bandpass'); this.tone(900, .3, 'sine', .07, 300); },
+  bawk() { this.tone(820, .09, 'square', .05, 1150); this.tone(980, .12, 'square', .04, 700, .1); },
+  splash() { this.noise(.8, .2, 3500, 'highpass'); },
+  screech() { this.tone(1200, .6, 'sawtooth', .05, 2400); this.tone(1800, .5, 'sine', .06, 900, .1); }
 };
 
 // ======================= STATE =======================
 const game = new Chess();
 const state = {
-  mode: 'ai', human: 'w', level: 1, skip: false, pixel: false, elephant: true, closeup: true, fights: 'full',
+  mode: 'ai', human: 'w', level: 1, skip: false, pixel: false, elephant: true, closeup: true, fights: 'full', transform: true,
   started: false, busy: false, thinking: false, over: null,
   sel: -1, selId: null, targets: [], last: null, hover: -1, gen: 0
 };
@@ -567,8 +592,8 @@ function computeCam() {
     const A = cx / cz, B = -cy / cz;
     minA = Math.min(minA, A); maxA = Math.max(maxA, A); minB = Math.min(minB, B); maxB = Math.max(maxB, B);
   }
-  const focal = Math.min(W * 0.95 / (maxA - minA), H * 0.9 / (maxB - minB)) * CAM.zoom * (1 + CAM.fk * 0.9);
-  CV.focal = focal; CV.offX = -focal * (minA + maxA) / 2; CV.offY = -focal * (minB + maxB) / 2;
+  const focal = Math.min(W * 0.95 / (maxA - minA), H * (window.innerWidth <= 900 ? 0.8 : 0.9) / (maxB - minB)) * CAM.zoom * (1 + CAM.fk * 0.9);
+  CV.focal = focal; CV.offX = -focal * (minA + maxA) / 2; CV.offY = -focal * (minB + maxB) / 2 + (window.innerWidth <= 900 ? H * 0.075 : 0);
   if (CAM.fk > 0) { const p = proj(CAM.tx, CAM.tz, 0.45); CV.offX += CAM.fk * (W / 2 - p[0]); CV.offY += CAM.fk * (H * 0.55 - p[1]); }
 }
 function proj(x, z, y = 0) {
@@ -591,6 +616,7 @@ function screenToSq(px, py) {
   return Math.floor(w.z) * 8 + Math.floor(w.x);
 }
 function screenFacing(x0, z0, x1, z1) { const d = proj(x1, z1)[0] - proj(x0, z0)[0]; return Math.abs(d) < 1.5 ? 0 : Math.sign(d); }
+function homePitch() { return window.innerWidth < 700 ? 64 * Math.PI / 180 : PDEF; }
 function homeYaw() { return state.mode === 'ai' && state.human === 'b' ? Math.PI : 0; }
 function camTo(target, ms = 650) {
   camAnim = { from: { ...CAM }, to: { ...CAM, ...target }, st: performance.now(), ms };
@@ -600,9 +626,10 @@ function resize() {
   const wrap = document.getElementById('stage');
   const w = wrap.clientWidth;
   if (w < 10) return;
-  let h = Math.min(w * 0.8, window.innerHeight - 32);
+  const narrow = window.innerWidth < 700;
+  let h = narrow ? Math.min(w * 1.02, window.innerHeight * 0.72) : Math.min(w * 0.8, window.innerHeight - 32);
   h = Math.max(h, Math.min(320, w * 0.9));
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = Math.min(window.devicePixelRatio || 1, 2.5);
   W = w; H = h;
   cvs.style.height = h + 'px';
   cvs.width = Math.round(w * DPR); cvs.height = Math.round(h * DPR);
@@ -780,7 +807,7 @@ function syncActors(resetFacing) {
     let a = actorById(p.id);
     if (!a) a = makeActor(p, s);
     const w = sqToWorld(s);
-    Object.assign(a, { type: p.t, color: p.c, x: w.x, z: w.z, walk: 0, lift: 0, atk: 0, rot: 0, alpha: 1, sx: 1, sy: 1, spin: 0 });
+    Object.assign(a, { type: p.t, color: p.c, x: w.x, z: w.z, walk: 0, lift: 0, atk: 0, rot: 0, alpha: 1, sx: 1, sy: 1, spin: 0, form: 0, gs: 1, aura: 0, potion: 0, chicken: false });
     if (resetFacing) a.facing = defaultFacing(p.c, w.x, w.z);
     next.push(a);
   }
@@ -889,6 +916,11 @@ function drawPawn(c, p, a) {
   c.restore();
   shield(c, p, -0.02, -0.35, 0.13);
   Lf(c, 0.07, -0.44, hx, hy, 0.055, p.cloth); Cf(c, hx, hy, 0.035, p.skin);
+  if (a.potion) {
+    const k = a.potion; c.save(); c.translate(lerp(hx, 0.13, k), lerp(hy, -0.58, k)); c.rotate(-k * 1.9);
+    Rf(c, -0.035, -0.05, 0.07, 0.09, 0.028, cyl(c, -0.035, 0.035, '#4fd86a')); Rf(c, -0.014, -0.088, 0.028, 0.04, 0.006, '#c9a06a');
+    c.restore();
+  }
 }
 
 function drawMount(c, p, a, g) {
@@ -913,6 +945,7 @@ function drawMount(c, p, a, g) {
     Pf(c, [0.4, -0.6, 0.42, -0.565, 0.44, -0.6], p.bone, false); Pf(c, [0.46, -0.605, 0.47, -0.575, 0.49, -0.605], p.bone, false);
     Pf(c, [0.25, -0.72, 0.27, -0.83, 0.32, -0.73], col); Pf(c, [0.3, -0.72, 0.33, -0.82, 0.36, -0.71], dk);
     Cf(c, 0.355, -0.68, 0.016, '#ff3a1a', false);
+    if (a.form) glow(c, 0.355, -0.68, 0.08 * a.form, '#ff3a1a', a.form);
     Cf(c, 0.52, -0.635, 0.014, '#111', false);
     for (let i = 0; i < 4; i++) Pf(c, [0.12 + i * 0.05, -0.55 + i * 0.03, 0.17 + i * 0.05, -0.62 + i * 0.025, 0.2 + i * 0.05, -0.52 + i * 0.03], dk, false);
   }
@@ -920,10 +953,15 @@ function drawMount(c, p, a, g) {
   Lf(c, -0.25, -0.33, 0.21, -0.33, 0.025, p.trim);
   if (p.horde) Pf(c, [-0.03, -0.48, 0.02, -0.42, -0.03, -0.36, -0.08, -0.42], p.bone); else Cf(c, -0.03, -0.43, 0.04, p.trim);
 }
-function drawKnight(c, p, a) {
+function drawKnight(c, p, a, now) {
   const L = lunge(a.atk), E = engaged(a.atk);
   c.translate(Math.max(0, L) * 0.16, 0);
+  const fm = a.form || 0;
+  if (fm && !p.horde) drawWing(c, p, a, now, fm, true);
+  if (fm && p.horde) { glow(c, 0.05, -0.5, 0.55 * fm, p.magic, 0.4 * fm); c.save(); c.scale(1 + 0.24 * fm, 1 + 0.24 * fm); }
   drawMount(c, p, a, a.walk);
+  if (fm && p.horde) { c.restore(); c.translate(0.02 * fm, -0.12 * fm); }
+  if (fm && !p.horde) drawWing(c, p, a, now, fm, false);
   Lf(c, 0.0, -0.52, 0.07, -0.37, 0.065, p.armorDark); Ef(c, 0.08, -0.36, 0.04, 0.025, p.leather);
   Pf(c, [-0.09, -0.8, 0.08, -0.8, 0.09, -0.53, -0.1, -0.53], cyl(c, -0.1, 0.09, p.armor));
   Pf(c, [-0.09, -0.68, 0.09, -0.68, 0.09, -0.55, -0.1, -0.55], cyl(c, -0.1, 0.09, p.cloth));
@@ -983,8 +1021,20 @@ function drawBishop(c, p, a, now) {
 }
 
 function drawRook(c, p, a, now) {
-  const L = lunge(a.atk);
+  const L = lunge(a.atk), fm = a.form || 0, R = 0.34 * fm;
   c.translate(Math.max(0, L) * 0.08, 0);
+  // walker legs unfold from under the tower
+  if (fm > 0.01) {
+    const leg = (lx, ph, col) => {
+      const sw = Math.sin(a.walk + ph), fx = lx + sw * 0.12 * fm, fy = -Math.max(0, Math.cos(a.walk + ph)) * 0.07 * fm;
+      const hx = lx, hy = -0.2 - R, kx = (hx + fx) / 2 + 0.08 * fm, ky = (hy + fy) / 2;
+      Lf(c, hx, hy, kx, ky, 0.08, col); Lf(c, kx, ky, fx, fy - 0.03, 0.07, col);
+      Cf(c, kx, ky, 0.042, cyl(c, kx - 0.04, kx + 0.04, p.armorDark));
+      Rf(c, fx - 0.08, fy - 0.055, 0.16, 0.055, 0.015, cyl(c, fx - 0.08, fx + 0.08, p.armorDark));
+    };
+    leg(-0.12, Math.PI, shade(p.woodDark, -.25)); leg(0.12, 0, p.woodDark);
+  }
+  c.translate(0, -R - (fm > 0.5 ? Math.abs(Math.sin(a.walk)) * 0.025 : 0));
   const body = p.horde ? p.wood : p.stone;
   Rf(c, -0.25, -1.0, 0.5, 0.8, 0.02, cyl(c, -0.25, 0.25, body));
   c.save(); c.strokeStyle = 'rgba(0,0,0,.3)'; c.lineWidth = Math.max(0.01, OUTW * 0.6);
@@ -1002,21 +1052,79 @@ function drawRook(c, p, a, now) {
   if (p.horde) { Cf(c, 0, -0.78, 0.048, p.bone); Cf(c, -0.017, -0.785, 0.011, '#111', false); Cf(c, 0.017, -0.785, 0.011, '#111', false); }
   else { Cf(c, 0, -0.78, 0.045, p.trim); for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4; Lf(c, Math.cos(an) * 0.05, -0.78 + Math.sin(an) * 0.05, Math.cos(an) * 0.075, -0.78 + Math.sin(an) * 0.075, 0.012, p.trim, false); } }
   Rf(c, 0.14, -0.88, 0.045, 0.12, 0.01, '#14100c', false);
+  if (fm > 0.05) { glow(c, 0.162, -0.845, 0.09 * fm, p.magic, fm); Cf(c, 0.162, -0.845, 0.014 * fm, '#ffffff', false); }
   Rf(c, -0.31, -0.24, 0.62, 0.09, 0.01, vgr(c, -0.24, -0.15, p.woodDark));
   const ro = L * 0.32;
   Lf(c, 0.02, -0.3, 0.4 + ro, -0.3, 0.08, p.woodDark);
   if (p.horde) Pf(c, [0.4 + ro, -0.36, 0.57 + ro, -0.3, 0.4 + ro, -0.24], p.blade);
   else Pf(c, [0.4 + ro, -0.36, 0.5 + ro, -0.35, 0.54 + ro, -0.3, 0.5 + ro, -0.25, 0.4 + ro, -0.24], cyl(c, 0.4 + ro, 0.54 + ro, p.armor));
   for (const wx of [-0.18, 0.18]) {
-    Cf(c, wx, -0.1, 0.1, p.woodDark);
-    c.save(); c.strokeStyle = p.wood; c.lineWidth = 0.022;
-    for (let k = 0; k < 4; k++) { const an = a.wheel + k * Math.PI / 4; c.beginPath(); c.moveTo(wx - Math.cos(an) * 0.085, -0.1 - Math.sin(an) * 0.085); c.lineTo(wx + Math.cos(an) * 0.085, -0.1 + Math.sin(an) * 0.085); c.stroke(); }
+    c.save(); c.translate(wx, -0.1 + 0.04 * fm); c.scale(1 - 0.55 * fm, 1 - 0.55 * fm);
+    Cf(c, 0, 0, 0.1, p.woodDark);
+    c.strokeStyle = p.wood; c.lineWidth = 0.022;
+    for (let k = 0; k < 4; k++) { const an = a.wheel + k * Math.PI / 4; c.beginPath(); c.moveTo(-Math.cos(an) * 0.085, -Math.sin(an) * 0.085); c.lineTo(Math.cos(an) * 0.085, Math.sin(an) * 0.085); c.stroke(); }
+    c.strokeStyle = 'rgba(22,16,10,.8)'; c.lineWidth = OUTW;
+    Cf(c, 0, 0, 0.028, p.armor);
     c.restore();
-    Cf(c, wx, -0.1, 0.028, p.armor);
   }
   Lf(c, 0, -1.17, 0, -1.4, 0.016, p.woodDark);
   if (p.horde) { Cf(c, 0, -1.43, 0.055, p.bone); Cf(c, 0.018, -1.44, 0.012, '#111', false); Pf(c, [-0.02, -1.38, 0.0, -1.35, 0.03, -1.38], p.bone, false); }
   else { const wv = Math.sin(now / 200 + a.id) * 0.03; Pf(c, [0, -1.4, 0.1, -1.38 + wv, 0.19, -1.35 + wv * 1.5, 0.1, -1.32 + wv, 0, -1.29], p.cloth); }
+}
+
+function drawWing(c, p, a, now, fm, far) {
+  const flying = a.lift > 0.05;
+  const flap = Math.sin(now / (flying ? 85 : 280) + a.id) * (flying ? 0.6 : 0.12);
+  c.save(); c.translate(-0.02, -0.56); c.rotate(-0.25 - flap + (far ? 0.3 : 0)); c.scale(fm, fm);
+  const col = far ? '#d9dde6' : '#ffffff';
+  for (let i = 5; i >= 0; i--) Ef(c, -0.04 - i * 0.06, -0.1 - i * 0.055, 0.2 - i * 0.018, 0.045, i % 2 ? shade(col, -.07) : col, 0.75 + i * 0.12);
+  Ef(c, -0.04, -0.06, 0.13, 0.07, vgr(c, -0.13, 0.01, p.cloth), 0.35);
+  Lf(c, -0.1, -0.06, 0.02, -0.06, 0.012, p.trim, false);
+  c.restore();
+}
+
+function drawPhoenix(c, p, a, now) {
+  const col = p.magic, hot = p.horde ? '#ffd23a' : '#ffffff', deep = p.horde ? '#c2331b' : '#2f6fdc';
+  const flap = Math.sin(now / 90 + a.id);
+  c.translate(0, -0.6);
+  glow(c, 0, 0, 0.8, col, 0.5);
+  c.save(); c.lineCap = 'round';
+  for (let i = 0; i < 3; i++) {
+    c.strokeStyle = [col, hot, deep][i]; c.lineWidth = 0.055 - i * 0.012;
+    c.beginPath(); c.moveTo(-0.15, 0.04);
+    c.bezierCurveTo(-0.38, 0.08 + i * 0.05, -0.5, 0.28 + Math.sin(now / 200 + i) * 0.08, -0.78 + i * 0.06, 0.24 + i * 0.09 + Math.sin(now / 170 + i) * 0.07);
+    c.stroke();
+  }
+  c.restore();
+  const wing = far => {
+    c.save(); c.translate(-0.02, -0.05); c.rotate(-0.15 - flap * 0.75 + (far ? 0.4 : 0));
+    for (let i = 0; i < 6; i++) Pf(c, [0, 0, -0.08 - i * 0.075, -0.5 + i * 0.07, 0.03 - i * 0.07, -0.46 + i * 0.08], i % 2 ? (far ? shade(deep, -.2) : deep) : (far ? shade(col, -.2) : col));
+    c.restore();
+  };
+  wing(true);
+  Ef(c, 0, 0, 0.21, 0.11, vgr(c, -0.11, 0.11, col), -0.2);
+  Ef(c, 0.07, 0.03, 0.1, 0.065, hot, -0.2, false);
+  Cf(c, 0.21, -0.11, 0.075, col);
+  Pf(c, [0.27, -0.13, 0.36, -0.1, 0.27, -0.07], '#ffcf3a');
+  Cf(c, 0.23, -0.125, 0.016, '#111', false);
+  Pf(c, [0.17, -0.16, 0.08, -0.32, 0.2, -0.18], hot); Pf(c, [0.15, -0.15, 0.03, -0.26, 0.17, -0.13], col); Pf(c, [0.2, -0.17, 0.16, -0.34, 0.24, -0.18], deep);
+  wing(false);
+  a.tip = [0.3, -0.7];
+}
+
+function drawChicken(c, p, a) {
+  const s = Math.sin(a.walk) * 0.05, wh = '#f6f2ea';
+  Lf(c, -0.03, -0.12, -0.03 - s, -0.01, 0.018, '#e8a33a'); Lf(c, 0.04, -0.12, 0.04 + s, -0.01, 0.018, '#e8a33a');
+  Pf(c, [-0.11, -0.24, -0.21, -0.34, -0.14, -0.18], wh);
+  Ef(c, 0, -0.2, 0.13, 0.1, vgr(c, -0.3, -0.1, wh));
+  Ef(c, -0.01, -0.2, 0.07, 0.045, shade(wh, -.12), -0.3, false);
+  Cf(c, 0.1, -0.32, 0.065, wh);
+  Pf(c, [0.15, -0.335, 0.215, -0.31, 0.15, -0.29], '#f2b83a');
+  Ef(c, 0.15, -0.27, 0.015, 0.025, '#e0302a', 0, false);
+  Cf(c, 0.12, -0.335, 0.012, '#111', false);
+  c.beginPath(); c.arc(0.09, -0.355, 0.055, Math.PI, 0); c.closePath(); c.fillStyle = p.horde ? p.armor : p.armor; c.fill(); c.stroke();
+  if (p.horde) { Pf(c, [0.05, -0.37, 0.02, -0.43, 0.06, -0.39], p.bone); Pf(c, [0.13, -0.37, 0.16, -0.43, 0.12, -0.39], p.bone); }
+  else Pf(c, [0.08, -0.405, 0.04, -0.46, 0.1, -0.41], p.plume);
 }
 
 function drawQueen(c, p, a, now) {
@@ -1161,6 +1269,7 @@ function drawActor(c, a, now) {
   c.globalAlpha = a.alpha;
   let bob = (a.atk || a.rot) ? 0 : Math.sin(now / 420 + a.id) * 0.008;
   if (state.selId === a.id) bob -= Math.abs(Math.sin(now / 170)) * 0.07;
+  if (a.gs && a.gs !== 1) c.scale(a.gs, a.gs);
   c.translate(0, -a.lift + bob); c.scale(a.facing, 1);
   if (a.sx !== undefined && (a.sx !== 1 || a.sy !== 1)) c.scale(a.sx, a.sy);
   if (a.rot) c.rotate(-a.rot);
@@ -1168,7 +1277,8 @@ function drawActor(c, a, now) {
   if (now - a.hitAt < 170 && 'filter' in c) c.filter = 'brightness(2.6)';
   OUTW = state.pixel ? Math.max(0.024, PXK * 0.9 / k) : 0.022;
   c.lineWidth = OUTW; c.strokeStyle = 'rgba(22,16,10,.8)'; c.lineJoin = 'round'; c.lineCap = 'round';
-  (kd === 'e' ? drawElephant : DRAW[a.type])(c, pal, a, now);
+  if (a.aura) glow(c, 0, -0.5, 0.85, a.auraCol || '#ffd84a', a.aura * 0.55);
+  (a.chicken ? drawChicken : kd === 'e' ? drawElephant : a.type === 'q' && a.form > 0.5 ? drawPhoenix : DRAW[a.type])(c, pal, a, now);
   c.restore();
 }
 
@@ -1254,7 +1364,7 @@ function walkTo(a, x, z, hop = false) {
     else {
       a.walk = w0 + trav * 9; a.wheel = wh0 + trav / 0.1;
       const st = Math.floor(a.walk / Math.PI);
-      if (st !== lastStep) { lastStep = st; isR ? SND.rumble() : SND.step(); }
+      if (st !== lastStep) { lastStep = st; a.form > 0.5 ? SND.stomp() : isR ? SND.rumble() : SND.step(); }
     }
     if (t >= 1) a.walk = 0;
   });
@@ -1273,10 +1383,17 @@ const kindOf = a => a.type === 'b' ? (state.elephant ? 'e' : 'm') : a.type;
 const isRanged = k => k === 'm' || k === 'q';
 const RANK = { p: 1, n: 3, m: 3, e: 3, r: 5, q: 9, k: 10 };
 const ROUNDS = { p: 1, n: 2, m: 2, e: 2, r: 2, q: 3, k: 3 };
+const LINES = {
+  w: { taunt: ['Have at you!', 'For the Legion!', 'Yield!', 'En garde!'], scared: ['Uh-oh…', 'Eek!', 'Oh dear…', 'Mercy!'], win: ['Victory!', 'Next!', 'Huzzah!'], laugh: ['Ha ha!', 'Clumsy!', 'Ho ho!'], ouch: ['Oof!', 'Ow!'] },
+  b: { taunt: ['Grrr!', 'Smash!', 'Puny!', 'Come here!'], scared: ['Ugh…', 'Uh-oh…', 'Not good…', 'Gulp!'], win: ['Too easy!', 'GRAAH!', 'More!'], laugh: ['Har har!', 'Heh heh!', 'Weakling!'], ouch: ['Ugh!', 'Grk!'] }
+};
+const line = (a, kind) => pick(LINES[a.color][kind]);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 let shakeUntil = 0, shakeMag = 0;
 function shake(mag, ms) { if (state.skip) return; shakeMag = mag; shakeUntil = performance.now() + ms; }
 function sparks(x, y, s, n = 14) { burst(x, y, n, ['#fff6c8', '#ffd24a', '#ffffff'], s * 3.2, 0.42, s * 5, s * 0.032); }
 function midPoint(a, v) { const p1 = actorPoint(a, [0.3, -0.5]), p2 = actorPoint(v, [0.3, -0.5]); return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, p1[2]]; }
+function screenDir(dx, dz) { const d = dx * CV.rx + dz * CV.rz; return Math.abs(d) < 0.15 ? 0 : Math.sign(d); }
 function slide(a, d, ms, lift = 0, ease = easeOut) { // d: signed distance along screen-right
   const x0 = a.x, z0 = a.z;
   return tween(ms, t => { const e = ease(t); a.x = x0 + CV.rx * d * e; a.z = z0 + CV.rz * d * e; a.lift = lift * Math.sin(Math.PI * t); if (t >= 1) a.lift = 0; });
@@ -1300,6 +1417,43 @@ function magicHit(att, vic) {
   const [x, y, s] = actorPoint(vic, [0, -0.45]);
   burst(x, y, 14, [PAL[att.color].magic, '#ffffff'], s * 3, 0.5, s * 4, s * 0.04); SND.magic(); vic.hitAt = performance.now();
 }
+function say(a, text, ms = 1100) {
+  if (state.skip || !a) return;
+  a.sayUntil = performance.now() + ms;
+  effect(ms, (c, k) => {
+    if (!actors.includes(a) && k > 0.2) return;
+    const [x, y, s] = actorPoint(a, [0.12, -1.25 * (a.gs || 1) * (a.chicken ? 0.45 : 1) - (a.form && a.type === 'r' ? 0.34 : 0)]);
+    const fs = Math.max(11, Math.min(22, s * 0.19));
+    c.save(); c.font = `bold ${fs}px Georgia`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    const w = c.measureText(text).width + fs * 1.1, h = fs * 1.7, pop = k < 0.12 ? easeOut(k / 0.12) : 1;
+    c.globalAlpha = k > 0.82 ? (1 - k) / 0.18 : 1;
+    c.translate(x, y - h * 0.5); c.scale(pop, pop);
+    c.fillStyle = '#fffdf4'; c.strokeStyle = '#2a2016'; c.lineWidth = 2;
+    c.beginPath(); if (c.roundRect) c.roundRect(-w / 2, -h / 2, w, h, h / 2); else c.rect(-w / 2, -h / 2, w, h);
+    c.moveTo(-fs * 0.3, h / 2 - 1); c.lineTo(-fs * 0.6, h / 2 + fs * 0.55); c.lineTo(fs * 0.1, h / 2 - 1);
+    c.fill(); c.stroke();
+    c.fillStyle = '#2a2016'; c.fillText(text, 0, 1);
+    c.restore();
+  });
+}
+async function morph(a, to, ms = 520) {
+  if (state.skip || !state.transform) { a.form = to; return; }
+  const from = a.form || 0; if (Math.abs(from - to) < 0.01) return;
+  SND.transform();
+  const pal = PAL[a.color];
+  let flashed = false;
+  await tween(ms, t => {
+    a.form = lerp(from, to, easeInOut(t));
+    if (Math.random() < 0.5) { const [x, y, s] = actorPoint(a, [(Math.random() - .5) * 0.6, -Math.random() * 0.9]); parts.push({ x, y, vx: 0, vy: -s * 0.8, life: 0.5, max: 0.5, col: Math.random() < .5 ? pal.magic : '#ffffff', g: 0, sz: s * 0.03 }); }
+    if (!flashed && t >= 0.5) {
+      flashed = true; a.hitAt = performance.now();
+      const [x, y, s] = actorPoint(a, [0, 0]);
+      fxRing(x, y, s, pal.magic);
+      burst(x, y - s * 0.5, 24, [pal.magic, '#ffffff', pal.trim], s * 3, 0.7, s, s * 0.04);
+    }
+  });
+  a.form = to;
+}
 function fxClash(a, v) {
   const s0 = actorPoint(a, a.tip), s1 = actorPoint(v, v.tip), mx = (s0[0] + s1[0]) / 2, my = (s0[1] + s1[1]) / 2 - s0[2] * 0.2;
   const ca = PAL[a.color].magic, cv = PAL[v.color].magic;
@@ -1311,54 +1465,136 @@ function fxClash(a, v) {
     return effect(300, (c, k) => glow(c, mx, my, s0[2] * (0.3 + k * 0.5), '#ffffff', 1 - k));
   });
 }
+function fxSpray(a, v, ms) { // elephant trunk water jet
+  return effect(ms, () => {
+    const [x, y, s] = actorPoint(a, a.tip), [tx, ty] = actorPoint(v, [0, -0.45]);
+    for (let i = 0; i < 3; i++) {
+      const sp = 0.9 + Math.random() * 0.3;
+      parts.push({ x, y, vx: (tx - x) * 2.2 * sp, vy: (ty - y) * 2.2 * sp - s * 1.5, life: 0.45, max: 0.45, col: Math.random() < .5 ? '#9fd8ff' : '#e8f6ff', g: s * 6, sz: s * 0.03 });
+    }
+  });
+}
 
 // ---------- exchanges (nobody dies yet) ----------
-async function blockBeat(a, v, side) { // attacker strikes, defender blocks
+async function blockBeat(a, v, side) {
   await strike(a, 520, () => {
     const [x, y, s] = midPoint(a, v); sparks(x, y, s); SND.clash();
     slide(v, side * 0.1, 200).then(() => slide(v, -side * 0.1, 220)); lean(v, 0.18, 320);
   });
 }
-async function counterBeat(a, v, side, round) { // defender answers, attacker survives
+async function counterBeat(a, v, side, round) {
   const vk = kindOf(v);
   if (isRanged(vk)) {
     let fx = null;
     await strike(v, 640, () => { fx = cast(v, a); });
-    await fx; magicHit(v, a);
+    await fx; magicHit(v, a); if (Math.random() < 0.5) say(a, line(a, 'ouch'), 700);
     await Promise.all([slide(a, -side * 0.18, 220), lean(a, 0.25, 320)]);
     await slide(a, side * 0.18, 260);
-  } else if (round % 2 === 0) { // attacker jumps back out of reach
+  } else if (round % 2 === 0) {
     const dodge = sleep(180).then(() => slide(a, -side * 0.3, 260, 0.18));
     await strike(v, 520);
     await dodge; await slide(a, side * 0.3, 240);
-  } else { // attacker parries
+  } else {
     await strike(v, 520, () => { const [x, y, s] = midPoint(v, a); sparks(x, y, s); SND.clash(); lean(a, 0.15, 280); });
   }
 }
 async function rangedRound(a, v, round) {
   const vk = kindOf(v);
-  if (isRanged(vk)) { // spell duel: the two spells collide in mid-air
+  if (isRanged(vk)) {
     await Promise.all([strike(a, 760), strike(v, 760), sleep(330).then(() => fxClash(a, v))]);
-  } else if (vk === 'p' || round % 2) { // takes it on the shield / armour, then advances
+  } else if (vk === 'p' || round % 2) {
     let fx = null;
     await strike(a, 640, () => { fx = cast(a, v); });
     await fx; magicHit(a, v);
     await lean(v, 0.2, 300);
     await stepToward(v, a, 0.45);
-  } else { // leaps over it, then advances
+  } else {
     let fx = null;
     const dodge = sleep(300).then(() => hop(v, 0.4, 400));
     await strike(a, 640, () => { fx = cast(a, v); });
     await fx; await dodge;
+    say(v, line(v, 'laugh'), 800);
     await stepToward(v, a, 0.45);
   }
 }
-async function knockdown(a, v) { // the stronger defender floors the attacker, who gets back up
+async function knockdown(a, v) {
   await strike(v, 520, () => { const [x, y, s] = actorPoint(a, [0, -0.45]); sparks(x, y, s); SND.thud(); a.hitAt = performance.now(); shake(4, 180); });
+  say(v, line(v, 'laugh'), 900);
   await tween(300, t => { a.rot = 1.3 * easeIn(t); });
   await sleep(450);
   await tween(380, t => { a.rot = 1.3 * (1 - easeOut(t)); });
   await hop(a, 0.15, 220);
+}
+async function drinkPotion(a) { // underdog spearman's secret weapon
+  say(a, a.color === 'w' ? 'Secret weapon!' : 'Glug glug!', 1000);
+  await tween(450, t => { a.potion = t; });
+  SND.potion(); await sleep(450);
+  a.potion = 0; a.auraCol = '#6fff7a';
+  const [x, y, s] = actorPoint(a, [0, -0.5]);
+  burst(x, y, 26, ['#6fff7a', '#d8ffd0', '#ffffff'], s * 3, 0.7, s, s * 0.04);
+  SND.grow();
+  await tween(550, t => { const e = easeOut(t); a.sx = 1 + 0.4 * e; a.sy = 1 + 0.14 * e; a.aura = e; });
+  await tremble(a, 300);
+}
+
+// ---------- interludes: comic and dramatic beats between rounds ----------
+async function chase(a, v, side) {
+  say(v, line(v, 'scared'), 1000);
+  const cx = (a.x + v.x) / 2, cz = (a.z + v.z) / 2, r = Math.max(0.5, Math.hypot(v.x - a.x, v.z - a.z) / 2);
+  const ang0 = Math.atan2(v.z - cz, v.x - cx), pa = { x: a.x, z: a.z }, pv = { x: v.x, z: v.z };
+  let lastStep = 0;
+  await tween(2000, t => {
+    const th = ang0 + t * Math.PI * 2, bl = Math.min(1, Math.min(t, 1 - t) * 6);
+    v.x = lerp(pv.x, cx + Math.cos(th) * r, bl); v.z = lerp(pv.z, cz + Math.sin(th) * r, bl);
+    a.x = lerp(pa.x, cx + Math.cos(th - 1.1) * r, bl); a.z = lerp(pa.z, cz + Math.sin(th - 1.1) * r, bl);
+    v.walk = a.walk = t * 45; a.wheel = t * 30;
+    const d = screenDir(-Math.sin(th), Math.cos(th)); if (d) { v.facing = d; a.facing = d; }
+    if (t - lastStep > 0.07) { lastStep = t; SND.step(); }
+    if (t >= 1) { v.walk = a.walk = 0; }
+  });
+  Object.assign(a, pa); Object.assign(v, pv);
+  a.facing = side; v.facing = -side;
+  say(v, 'Phew…', 800);
+}
+async function joust(a, v, side) {
+  await Promise.all([slide(a, -side * 0.45, 380), slide(v, side * 0.45, 380)]);
+  say(a, line(a, 'taunt'), 900); say(v, line(v, 'taunt'), 900);
+  await sleep(300);
+  await Promise.all([slide(a, side * 0.55, 300, 0, easeIn), slide(v, -side * 0.55, 300, 0, easeIn),
+    strike(v, 380, null, 0.75),
+    strike(a, 380, () => { const [x, y, s] = midPoint(a, v); burst(x, y, 34, ['#fff6c8', '#ffd24a', '#ffffff', '#ff9a3a'], s * 4.5, 0.6, s * 4, s * 0.045); SND.clash(); SND.thud(); shake(8, 320); }, 0.75)]);
+  await Promise.all([slide(a, -side * 0.25, 280, 0.18), slide(v, side * 0.25, 280, 0.18)]);
+  await Promise.all([slide(a, side * 0.15, 300), slide(v, -side * 0.15, 300)]);
+}
+async function tauntDance(x) {
+  say(x, line(x, 'taunt'), 1000);
+  await hop(x, 0.15, 240);
+  SND.boing();
+  await tween(560, t => { x.spin = t * Math.PI * 2; x.lift = Math.sin(Math.PI * t) * 0.28; if (t >= 1) { x.spin = 0; x.lift = 0; } });
+  await hop(x, 0.1, 200);
+}
+async function stumble(x, other) {
+  await tween(260, t => { x.rot = -1.15 * easeIn(t); });
+  SND.thud();
+  { const [px, py, s] = actorPoint(x, [0.5, 0]); burst(px, py, 12, ['#9b8a6a', '#c4b494'], s * 2, 0.5, s * 2, s * 0.05); }
+  say(other, line(other, 'laugh'), 1000);
+  await sleep(550);
+  await tween(380, t => { x.rot = -1.15 * (1 - easeOut(t)); });
+  x.rot = 0;
+  say(x, '…', 700);
+  await sleep(250);
+}
+function interludePool(a, v, ranged) {
+  const pool = ['taunt', 'stumble'];
+  if (!ranged && !isRanged(kindOf(v))) pool.push('joust', 'joust');
+  if (kindOf(v) !== 'r' || state.transform) pool.push('chase', 'chase');
+  return pool;
+}
+async function interlude(kind, a, v, side) {
+  if (kind === 'chase') return chase(a, v, side);
+  if (kind === 'joust') return joust(a, v, side);
+  if (kind === 'stumble') return stumble(Math.random() < 0.5 ? a : v, Math.random() < 0.5 ? v : a);
+  return tauntDance(RANK[kindOf(a)] >= RANK[kindOf(v)] ? a : v);
 }
 
 // ---------- deaths ----------
@@ -1377,8 +1613,8 @@ async function deathFall(v) {
     v.alpha = t < 0.62 ? 1 : Math.max(0, 1 - (t - 0.62) / 0.38);
   });
 }
-async function deathLaunch(v, dir, dist) { // knocked spinning off the field
-  SND.die();
+async function deathLaunch(v, dir, dist) {
+  SND.die(); say(v, line(v, 'scared'), 800);
   const x0 = v.x, z0 = v.z;
   await tween(950, t => {
     v.x = x0 + CV.rx * dir * dist * t; v.z = z0 + CV.rz * dir * dist * t;
@@ -1386,7 +1622,7 @@ async function deathLaunch(v, dir, dist) { // knocked spinning off the field
     v.alpha = t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.3);
   });
 }
-async function deathSquash(v) { // flattened
+async function deathSquash(v) {
   SND.thud(); shake(8, 320);
   const [x, y, s] = actorPoint(v, [0, 0]);
   burst(x, y, 20, ['#9b8a6a', '#c4b494', '#7c6c50'], s * 3, 0.6, s * 2, s * 0.06);
@@ -1394,7 +1630,7 @@ async function deathSquash(v) { // flattened
   await sleep(550);
   await tween(400, t => { v.alpha = 1 - t; });
 }
-async function deathBurn(v, col) { // burns down to ash
+async function deathBurn(v, col) {
   SND.die(); v.hitAt = performance.now();
   await tween(1200, t => {
     v.sy = 1 - 0.9 * easeIn(t); v.sx = 1 - 0.35 * t; v.alpha = 1 - t * 0.85;
@@ -1407,7 +1643,7 @@ async function deathBurn(v, col) { // burns down to ash
   burst(x, y, 14, ['#5a5550', '#8a847c', '#3a3632'], s * 1.2, 0.8, s * 1.5, s * 0.04);
   v.alpha = 0; await sleep(300);
 }
-async function deathExplode(v, col) { // blown apart by magic
+async function deathExplode(v, col) {
   v.hitAt = performance.now();
   await sleep(140);
   const [x, y, s] = actorPoint(v, [0, -0.45]);
@@ -1417,7 +1653,7 @@ async function deathExplode(v, col) { // blown apart by magic
   await effect(450, (c, k) => glow(c, x, y, s * (0.3 + k * 0.9), col, 1 - k));
   await sleep(200);
 }
-async function deathCrumble(v) { // a tower collapses into rubble
+async function deathCrumble(v) {
   SND.thud(); shake(6, 600);
   const x0 = v.x, z0 = v.z;
   await tween(1000, t => {
@@ -1431,17 +1667,60 @@ async function deathCrumble(v) { // a tower collapses into rubble
   SND.thud();
   await tween(450, t => { v.alpha = 1 - t; });
 }
+async function deathChicken(v, side) { // polymorphed into a chicken, which runs off the field
+  const [x, y, s] = actorPoint(v, [0, -0.4]);
+  burst(x, y, 34, ['#ffffff', '#ffd6f5', '#d8c8ff'], s * 2.5, 0.8, -s * 0.5, s * 0.07);
+  SND.poof();
+  v.chicken = true; v.rot = 0; v.spin = 0; v.sx = v.sy = 1; v.facing = side;
+  await sleep(350);
+  say(v, 'Bawk?!', 900); SND.bawk();
+  await hop(v, 0.2, 260);
+  await sleep(250);
+  const x0 = v.x, z0 = v.z; let last = 0;
+  await tween(1500, t => {
+    v.x = x0 + CV.rx * side * 3.2 * t; v.z = z0 + CV.rz * side * 3.2 * t;
+    v.walk = t * 70; v.lift = Math.abs(Math.sin(t * 22)) * 0.07;
+    if (t - last > 0.25) { last = t; SND.bawk(); }
+    v.alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+  });
+}
 
 // ---------- finishing moves, by attacker ----------
 async function finish(a, v, side) {
-  const ak = kindOf(a), vk = kindOf(v), magic = PAL[a.color].magic;
+  const ak = kindOf(a), vk = kindOf(v), magic = PAL[a.color].magic, T = state.transform;
   switch (ak) {
-    case 'p': { // spearman: hop and thrust
-      await hop(a, 0.22, 280);
-      await strike(a, 640, () => hit(a, v, 'clash'));
-      return vk === 'r' ? deathCrumble(v) : deathFall(v);
+    case 'p': {
+      const pumped = a.sx > 1.05;
+      await hop(a, pumped ? 0.35 : 0.22, 300);
+      await strike(a, 640, () => { hit(a, v, 'clash'); if (pumped) shake(7, 260); });
+      const d = vk === 'r' ? deathCrumble(v) : pumped ? deathLaunch(v, side, 2.6) : deathFall(v);
+      await d;
+      if (pumped) await tween(400, t => { a.sx = 1.4 - 0.4 * t; a.sy = 1.14 - 0.14 * t; a.aura = 1 - t; });
+      return;
     }
-    case 'n': { // rider: back off, then charge with the lance levelled
+    case 'n': {
+      if (T && !PAL[a.color].horde) { // the horse sprouts wings: rise, then dive
+        say(a, 'To the skies!', 900);
+        await morph(a, 1);
+        await Promise.all([tween(600, t => { a.lift = 0.95 * easeOut(t); }), slide(a, -side * 0.55, 600)]);
+        await sleep(200);
+        await Promise.all([slide(a, side * 1.15, 420, 0, easeIn), tween(420, t => { a.lift = 0.95 * (1 - easeIn(t)); }), strike(a, 460, () => { hit(a, v, 'thud'); shake(7, 280); }, 0.72)]);
+        a.lift = 0;
+        const d = vk === 'r' ? deathCrumble(v) : vk === 'e' ? deathFall(v) : deathLaunch(v, side, 2.4);
+        await d; await morph(a, 0);
+        return;
+      }
+      if (T) { // the wolf swells into a dire wolf and pounces
+        say(a, 'GRRAAH!', 900); SND.roar();
+        await morph(a, 1);
+        await tween(300, t => { a.sy = 1 - 0.12 * easeOut(t); });
+        await Promise.all([slide(a, side * 0.55, 440, 0.55), tween(200, t => { a.sy = 0.88 + 0.12 * t; }), strike(a, 460, () => { hit(a, v, 'thud'); shake(7, 280); }, 0.8)]);
+        await tremble(v, 350);
+        const d = vk === 'r' ? deathCrumble(v) : vk === 'e' ? deathFall(v) : deathLaunch(v, side, 2.2);
+        await Promise.all([d, slide(a, -side * 0.55, 500)]);
+        await morph(a, 0);
+        return;
+      }
       await slide(a, -side * 0.8, 460, 0, easeInOut);
       await sleep(180);
       await Promise.all([slide(a, side * 1.05, 300, 0, easeIn), strike(a, 430, () => { hit(a, v, 'thud'); shake(6, 250); }, 0.62)]);
@@ -1449,15 +1728,36 @@ async function finish(a, v, side) {
       if (vk === 'e') return deathFall(v);
       return deathLaunch(v, side, 2.4);
     }
-    case 'e': { // war elephant
-      if (vk === 'r' || vk === 'e') { // too heavy to throw: batter it down
+    case 'e': {
+      if (vk === 'r' || vk === 'e') {
+        SND.trumpet();
         await strike(a, 620, () => { hit(a, v, 'thud'); shake(5, 200); });
         await strike(a, 620, () => { hit(a, v, 'thud'); shake(8, 300); });
         return vk === 'r' ? deathCrumble(v) : deathFall(v);
       }
-      // trunk toss, then stomp
+      const move = pick(['toss', 'stampede', 'spray']);
+      if (move === 'stampede') {
+        await slide(a, -side * 0.7, 520, 0, easeInOut);
+        SND.trumpet(); say(a, a.color === 'w' ? 'CHARGE!' : 'STAMPEDE!', 900);
+        await tremble(a, 300);
+        await Promise.all([slide(a, side * 0.95, 380, 0, easeIn), strike(a, 420, () => { hit(a, v, 'thud'); shake(10, 400); }, 0.7)]);
+        return deathLaunch(v, side, 3.0);
+      }
+      if (move === 'spray') {
+        SND.trumpet();
+        await tween(350, t => { a.atk = 0.38 * t; });
+        SND.splash();
+        await fxSpray(a, v, 800);
+        say(v, 'Whoa!', 800);
+        await tween(500, t => { v.spin = Math.sin(t * 25) * 0.3; v.lift = Math.abs(Math.sin(t * 9)) * 0.1; });
+        v.spin = 0; v.lift = 0;
+        await tween(260, t => { v.rot = 1.45 * easeIn(t); }); SND.thud();
+        await tween(260, t => { a.atk = 0.38 + 0.62 * t; if (t >= 1) a.atk = 0; });
+        await Promise.all([tween(420, t => { a.rot = t >= 1 ? 0 : 0.3 * Math.sin(Math.PI * t); a.lift = t >= 1 ? 0 : 0.12 * Math.sin(Math.PI * t); }), slide(a, side * 0.3, 420)]);
+        return deathSquash(v);
+      }
       await strike(a, 720, () => hit(a, v, 'thud'));
-      SND.whoosh();
+      SND.whoosh(); say(v, 'Wheee!', 800);
       await tween(850, t => { v.lift = Math.sin(Math.PI * t) * 1.35; v.spin = t * Math.PI * 4; if (t >= 1) { v.lift = 0; v.spin = 0; v.rot = 1.45; } });
       SND.thud(); shake(5, 200);
       { const [x, y, s] = actorPoint(v, [0, 0]); burst(x, y, 14, ['#9b8a6a', '#c4b494'], s * 2, 0.5, s * 2, s * 0.05); }
@@ -1467,13 +1767,23 @@ async function finish(a, v, side) {
       await Promise.all([tween(150, t => { a.rot = 0.3 * (1 - t); a.lift = 0.12 * (1 - t); }), slide(a, side * 0.3, 150)]);
       return deathSquash(v);
     }
-    case 'm': { // mage: long charge-up, then a fire bolt
+    case 'm': {
       let fx = null;
       await strike(a, 1100, () => { fx = fxBolt(a, v); });
-      await fx; hit(a, v, 'magic'); shake(4, 200);
+      await fx;
+      if (vk !== 'r' && Math.random() < 0.5) return deathChicken(v, side);
+      hit(a, v, 'magic'); shake(4, 200);
       return vk === 'r' ? deathCrumble(v) : deathBurn(v, magic);
     }
-    case 'r': { // siege tower: roll back, then ram at speed
+    case 'r': {
+      if (T && a.form > 0.5 && vk !== 'r' && Math.random() < 0.5) { // the walker leaps and stomps
+        say(a, 'STOMP!', 800);
+        await tween(320, t => { a.sy = 1 - 0.1 * easeOut(t); });
+        await Promise.all([slide(a, side * 0.5, 520, 0.9), tween(200, t => { a.sy = 0.9 + 0.1 * t; })]);
+        const d = deathSquash(v);
+        await Promise.all([d, sleep(300).then(() => slide(a, -side * 0.5, 420, 0.3))]);
+        return;
+      }
       await slide(a, -side * 0.55, 520, 0, easeInOut);
       await sleep(140);
       await Promise.all([slide(a, side * 0.8, 260, 0, easeIn), strike(a, 400, () => { hit(a, v, 'thud'); shake(9, 350); }, 0.62)]);
@@ -1481,8 +1791,25 @@ async function finish(a, v, side) {
       if (vk === 'e') return deathFall(v);
       return deathLaunch(v, side, 3.2);
     }
-    case 'q': { // sorceress: lift the victim and hold them in lightning
+    case 'q': {
       const heavy = vk === 'r' || vk === 'e';
+      if (T) { // she becomes a phoenix and dives through the enemy
+        say(a, a.color === 'w' ? 'Behold!' : 'Burn!', 900);
+        await morph(a, 1, 650);
+        SND.screech();
+        await Promise.all([tween(500, t => { a.lift = 0.8 * easeOut(t); }), slide(a, -side * 0.5, 500)]);
+        await sleep(150);
+        let hitDone = false;
+        await Promise.all([slide(a, side * 1.6, 480, 0, easeIn), tween(480, t => {
+          a.lift = 0.8 - 0.55 * t;
+          if (Math.random() < 0.8) { const [x, y, s] = actorPoint(a, [-0.2, -0.6]); parts.push({ x, y, vx: 0, vy: s * 0.3, life: 0.5, max: 0.5, col: Math.random() < .5 ? magic : '#ffd27a', g: 0, sz: s * 0.05 }); }
+          if (!hitDone && t > 0.55) { hitDone = true; hit(a, v, 'magic'); shake(8, 300); }
+        })]);
+        const d = vk === 'r' ? deathCrumble(v) : deathBurn(v, magic);
+        await Promise.all([d, tween(500, t => { a.lift = 0.25 * (1 - t); }), slide(a, -side * 1.1, 500)]);
+        await morph(a, 0, 600);
+        return;
+      }
       await tween(320, t => { a.atk = 0.45 * t; });
       if (!heavy) await tween(650, t => { v.lift = 0.65 * easeOut(t); });
       SND.zap();
@@ -1497,10 +1824,20 @@ async function finish(a, v, side) {
       if (vk === 'e') return deathBurn(v, magic);
       return deathExplode(v, magic);
     }
-    default: { // king: three-cut combo, the victim kneels and falls
-      for (let i = 0; i < 3; i++) {
-        await strike(a, 470, () => { fxSlash(v, a.facing); hit(a, v, 'clash'); if (i === 2) shake(5, 220); });
+    default: {
+      if (T) { // the king grows into a giant for one mighty blow
+        say(a, a.color === 'w' ? 'KNEEL!' : 'ENOUGH!', 1000);
+        a.auraCol = '#ffd84a'; SND.grow();
+        await Promise.all([tween(800, t => { const e = easeInOut(t); a.gs = 1 + 0.75 * e; a.aura = e; if (Math.random() < 0.3) shake(2, 60); }), tremble(v, 800)]);
+        say(v, line(v, 'scared'), 900);
+        await strike(a, 1000, () => { fxSlash(v, a.facing); hit(a, v, 'thud'); shake(13, 450); }, 0.55);
+        const d = vk === 'r' ? deathCrumble(v) : deathSquash(v);
+        await d;
+        await tween(500, t => { a.gs = 1.75 - 0.75 * easeInOut(t); a.aura = 1 - t; });
+        a.gs = 1; a.aura = 0;
+        return;
       }
+      for (let i = 0; i < 3; i++) await strike(a, 470, () => { fxSlash(v, a.facing); hit(a, v, 'clash'); if (i === 2) shake(5, 220); });
       if (vk === 'r') return deathCrumble(v);
       await tween(300, t => { v.sy = 1 - 0.2 * easeOut(t); });
       await sleep(350);
@@ -1517,11 +1854,11 @@ function camFocus(x, z, on) {
 }
 
 async function battle(a, v, dst) {
-  const ak = kindOf(a), vk = kindOf(v), ranged = isRanged(ak), quick = state.fights === 'quick';
-  // fighters meet side by side on screen: offset along the camera's right vector
+  const ak = kindOf(a), vk = kindOf(v), ranged = isRanged(ak), mode = state.fights, quick = mode === 'quick', epic = mode === 'epic';
   const along = (v.x - a.x) * CV.rx + (v.z - a.z) * CV.rz;
   let side = Math.sign(along);
   if (Math.abs(along) < 0.1) side = ((v.x - 4) * CV.rx + (v.z - 4) * CV.rz) < 0 ? -1 : 1;
+  if (ak === 'r' && state.transform) await morph(a, 1);
   if (!ranged) {
     const gap = ak === 'e' || vk === 'e' || ak === 'r' ? 0.86 : 0.74;
     await walkTo(a, v.x - CV.rx * side * gap, v.z - CV.rz * side * gap);
@@ -1533,22 +1870,37 @@ async function battle(a, v, dst) {
   a.facing = side; v.facing = -side;
   await camFocus((a.x + v.x) / 2, (a.z + v.z) / 2, true);
   if (!quick) {
-    // face-off: who is the underdog?
-    if (RANK[ak] < RANK[vk]) await Promise.all([hop(v, 0.14, 240).then(() => hop(v, 0.14, 240)), tremble(a, 480)]);
-    else if (RANK[ak] > RANK[vk]) await Promise.all([hop(a, 0.16, 280), tremble(v, 520)]);
-    else await Promise.all([hop(a, 0.12, 240), hop(v, 0.12, 240)]);
-    await sleep(140);
-    for (let i = 0; i < ROUNDS[vk]; i++) {
+    if (RANK[ak] < RANK[vk]) {
+      say(a, line(a, 'scared')); await sleep(300); say(v, line(v, 'laugh'));
+      await Promise.all([hop(v, 0.14, 240).then(() => hop(v, 0.14, 240)), tremble(a, 480)]);
+    } else if (RANK[ak] > RANK[vk]) {
+      say(a, line(a, 'taunt')); await Promise.all([hop(a, 0.16, 280), tremble(v, 520)]); say(v, line(v, 'scared'));
+    } else {
+      say(a, line(a, 'taunt')); await Promise.all([hop(a, 0.12, 240), hop(v, 0.12, 240)]); say(v, line(v, 'taunt'));
+    }
+    await sleep(300);
+    if (vk === 'r' && state.transform && !v.form) { say(v, 'Unfold!', 800); await morph(v, 1); }
+    const rounds = ROUNDS[vk] + (epic ? 2 : 0);
+    const pool = interludePool(a, v, ranged), used = [];
+    const nextInterlude = () => { const opts = pool.filter(k => !used.includes(k)); const k = pick(opts.length ? opts : pool); used.push(k); return k; };
+    for (let i = 0; i < rounds; i++) {
       if (ranged) await rangedRound(a, v, i);
       else { await blockBeat(a, v, side); await sleep(90); await counterBeat(a, v, side, i); await sleep(90); }
+      if (i === 0 || (epic && (i === rounds - 2 || i === 2))) { await sleep(120); await interlude(nextInterlude(), a, v, side); await sleep(150); }
     }
-    if (!ranged && !isRanged(vk) && RANK[ak] < RANK[vk]) { await knockdown(a, v); await sleep(120); }
+    if (!ranged && !isRanged(vk) && RANK[ak] < RANK[vk]) {
+      await knockdown(a, v); await sleep(120);
+      if (ak === 'p' && state.transform) await drinkPotion(a);
+    }
   } else await sleep(150);
   await finish(a, v, side);
   actors = actors.filter(x => x !== v);
-  await sleep(120);
+  await sleep(150);
+  if (!quick && Math.random() < 0.6) { say(a, line(a, 'win'), 900); await hop(a, 0.14, 260); }
   await Promise.all([camFocus(0, 0, false), walkTo(a, dst.x, dst.z)]);
+  if (a.form) await morph(a, 0);
 }
+
 async function animateMove(info) {
   const a = actorById(info.moverId); if (!a) return;
   const dst = sqToWorld(info.to);
@@ -1558,6 +1910,8 @@ async function animateMove(info) {
   } else if (info.castle) {
     const r = actorById(info.rookId), rd = sqToWorld(info.rookTo);
     await Promise.all([walkTo(a, dst.x, dst.z), sleep(200).then(() => r && walkTo(r, rd.x, rd.z))]);
+  } else if (a.type === 'r' && state.transform) {
+    await morph(a, 1); await walkTo(a, dst.x, dst.z); await morph(a, 0);
   } else {
     await walkTo(a, dst.x, dst.z, a.type === 'n');
   }
@@ -1766,7 +2120,7 @@ function updatePanel() {
   else if (state.mode === 'ai' && t === state.human) s = `Your move (${ARMY[t]})`;
   else s = `${ARMY[t]} to move`;
   if (state.started && !state.over && !state.thinking && game.inCheck()) s = '⚠ Check! ' + s;
-  $('sText').textContent = s;
+  $('sText').textContent = s; $('hText').textContent = s; $('hDot').style.background = PAL[t].cloth;
   const capW = [], capB = [];
   for (const u of game.history) if (u.cap) (u.piece.c === 'w' ? capW : capB).push(u.cap);
   const ord = { q: 0, r: 1, b: 2, n: 3, p: 4 };
@@ -1779,7 +2133,7 @@ function updatePanel() {
     for (let i = 0; i < game.log.length; i += 2) h += `<div class="row"><span class="n">${i / 2 + 1}.</span><span>${game.log[i]}</span><span>${game.log[i + 1] || ''}</span></div>`;
     mv.innerHTML = h; mv.scrollTop = mv.scrollHeight;
   }
-  $('bUndo').disabled = !game.history.length || state.busy;
+  $('bUndo').disabled = $('hUndo').disabled = !game.history.length || state.busy;
 }
 function newGame() {
   state.gen++;
@@ -1822,7 +2176,7 @@ $('cYaw').oninput = e => { camAnim = null; CAM.yaw = +e.target.value * Math.PI /
 $('cZoom').oninput = e => { camAnim = null; CAM.zoom = +e.target.value / 100; camDirty = true; };
 $('vTop').onclick = () => camTo({ pitch: PMAX, zoom: 1 });
 $('vBattle').onclick = () => camTo({ pitch: 30 * Math.PI / 180, zoom: 1.05 });
-$('vReset').onclick = () => camTo({ yaw: CAM.yaw + wrapAngle(homeYaw() - CAM.yaw), pitch: PDEF, zoom: 1 });
+$('vReset').onclick = () => camTo({ yaw: CAM.yaw + wrapAngle(homeYaw() - CAM.yaw), pitch: homePitch(), zoom: 1 });
 $('bFlip').onclick = () => camTo({ yaw: CAM.yaw + Math.PI }, 800);
 
 let drag = null;
@@ -1851,6 +2205,19 @@ window.addEventListener('pointerup', e => {
 window.addEventListener('pointercancel', () => { drag = null; });
 cvs.addEventListener('wheel', e => { e.preventDefault(); camAnim = null; CAM.zoom = clamp(CAM.zoom * Math.exp(-e.deltaY * 0.0012), 0.6, 2); camDirty = true; }, { passive: false });
 cvs.addEventListener('contextmenu', e => e.preventDefault());
+// two-finger pinch zoom
+const touchPts = new Map(); let pinch = null;
+cvs.addEventListener('pointerdown', e => {
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (touchPts.size === 2) { const [p1, p2] = [...touchPts.values()]; pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, z: CAM.zoom }; drag = null; camAnim = null; }
+});
+window.addEventListener('pointermove', e => {
+  if (!touchPts.has(e.pointerId)) return;
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touchPts.size === 2) { const [p1, p2] = [...touchPts.values()]; CAM.zoom = clamp(pinch.z * Math.hypot(p1.x - p2.x, p1.y - p2.y) / pinch.d, 0.6, 2); camDirty = true; }
+});
+const endTouch = e => { touchPts.delete(e.pointerId); if (touchPts.size < 2) pinch = null; };
+window.addEventListener('pointerup', endTouch); window.addEventListener('pointercancel', endTouch);
 cvs.addEventListener('mouseleave', () => { state.hover = -1; });
 
 // ---------- wiring ----------
@@ -1868,6 +2235,11 @@ $('bNew').onclick = () => { SND.init(); $('ovEnd').classList.add('hidden'); $('o
 $('bEndNew').onclick = () => { $('ovEnd').classList.add('hidden'); $('ovStart').classList.remove('hidden'); };
 $('bEndView').onclick = () => $('ovEnd').classList.add('hidden');
 $('bUndo').onclick = undo;
+$('hUndo').onclick = undo;
+$('hFlip').onclick = () => $('bFlip').click();
+$('hMenu').onclick = () => $('panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+$('tTrans').onchange = e => { state.transform = e.target.checked; };
+if (window.innerWidth < 700) document.querySelectorAll('details.coll').forEach(d => d.removeAttribute('open'));
 $('sFight').onchange = e => { state.fights = e.target.value; state.skip = state.fights === 'off'; };
 $('tEleph').onchange = e => { state.elephant = e.target.checked; };
 $('tClose').onchange = e => { state.closeup = e.target.checked; };
@@ -1876,6 +2248,7 @@ $('tPixel').onchange = e => { state.pixel = e.target.checked; };
 window.addEventListener('resize', () => { resize(); });
 
 resize();
+CAM.pitch = homePitch();
 computeCam();
 syncActors(true);
 updatePanel();
