@@ -125,7 +125,12 @@ button,select,input,summary{touch-action:manipulation}
     <label class="tog"><input type="checkbox" id="tClose" checked> Zoom in on battles</label>
     <label class="tog"><input type="checkbox" id="tPixel"> Pixel-art style</label>
     <label class="sl" style="grid-template-columns:auto 1fr;gap:8px"><span>Battles</span><select id="sFight"><option value="full">Full duels</option><option value="epic">Epic duels</option><option value="quick">Quick</option><option value="off">Off</option></select></label>
-    <label class="tog"><input type="checkbox" id="tSound" checked> Sound</label>
+    </details>
+    <details class="cam coll" open>
+      <summary class="caplabel">Sound</summary>
+      <label class="tog"><input type="checkbox" id="tSound" checked> Sound effects</label>
+      <label class="tog"><input type="checkbox" id="tMusic" checked> Music (calm while you think, war drums in battle)</label>
+      <label class="sl"><span>Volume</span><input type="range" id="cMVol" min="0" max="100" value="60"></label>
     </details>
     <div class="hint">Tap a soldier, then tap a highlighted square. Silver Legion (humans) vs Iron Horde (orcs): spearmen = pawns, riders = knights, war elephants (or mages) = bishops, siege towers = rooks, sorceress = queen, crowned warlord = king.</div>
   </aside>
@@ -498,9 +503,21 @@ const SND = {
     if (this.ac) { if (this.ac.state === 'suspended') this.ac.resume(); return; }
     try {
       this.ac = new (window.AudioContext || window.webkitAudioContext)();
-      this.master = this.ac.createGain(); this.master.gain.value = 0.6; this.master.connect(this.ac.destination);
-      const len = this.ac.sampleRate; this.nb = this.ac.createBuffer(1, len, this.ac.sampleRate);
+      const ac = this.ac;
+      // master -> gentle compressor so music + effects never clip
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.2;
+      comp.connect(ac.destination);
+      this.master = ac.createGain(); this.master.gain.value = 0.75; this.master.connect(comp);
+      const len = ac.sampleRate; this.nb = ac.createBuffer(1, len, ac.sampleRate);
       const d = this.nb.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      // hall reverb from a generated impulse response
+      const rl = Math.floor(ac.sampleRate * 2.4), ir = ac.createBuffer(2, rl, ac.sampleRate);
+      for (let ch = 0; ch < 2; ch++) { const b = ir.getChannelData(ch); for (let i = 0; i < rl; i++) b[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / rl, 3.2); }
+      this.verb = ac.createConvolver(); this.verb.buffer = ir;
+      const vg = ac.createGain(); vg.gain.value = 0.5; this.verb.connect(vg); vg.connect(this.master);
+      this.sfx = ac.createGain(); this.sfx.gain.value = 1; this.sfx.connect(this.master);
+      const send = ac.createGain(); send.gain.value = 0.22; this.sfx.connect(send); send.connect(this.verb);
+      MUS.setup();
     } catch (e) { this.ac = null; }
   },
   tone(f, d, type = 'sine', v = .2, f2 = null, delay = 0) {
@@ -508,22 +525,34 @@ const SND = {
     const t = this.ac.currentTime + delay, o = this.ac.createOscillator(), g = this.ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + d + 0.05);
+    o.connect(g); g.connect(this.sfx); o.start(t); o.stop(t + d + 0.05);
   },
   noise(d, v = .2, freq = 1000, ftype = 'bandpass', delay = 0) {
     if (!this.on || !this.ac || state.skip && !this.force) return;
     const t = this.ac.currentTime + delay, src = this.ac.createBufferSource(), fl = this.ac.createBiquadFilter(), g = this.ac.createGain();
     src.buffer = this.nb; fl.type = ftype; fl.frequency.value = freq;
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    src.connect(fl); fl.connect(g); g.connect(this.master); src.start(t, Math.random() * 0.5); src.stop(t + d + 0.05);
+    src.connect(fl); fl.connect(g); g.connect(this.sfx); src.start(t, Math.random() * 0.5); src.stop(t + d + 0.05);
+  },
+  // ringing metal: inharmonic partials, like a struck blade
+  ring(base, d = .7, v = .06, delay = 0) {
+    [1, 2.76, 5.4, 8.93].forEach((r, i) => this.tone(base * r, d / (1 + i * .5), 'sine', v / (1 + i * .7), base * r * .995, delay));
   },
   always(fn) { this.force = true; fn(); this.force = false; },
   step() { this.noise(.06, .1, 650, 'lowpass'); },
   rumble() { this.noise(.14, .14, 200, 'lowpass'); },
   land() { this.noise(.12, .22, 400, 'lowpass'); this.tone(90, .15, 'sine', .22, 50); },
   whoosh() { this.noise(.25, .12, 1400, 'bandpass'); },
-  clash() { this.tone(1500, .3, 'square', .045, 900); this.tone(2300, .25, 'square', .03, 1600); this.noise(.18, .25, 4000, 'highpass'); },
-  thud() { this.tone(110, .35, 'sine', .45, 40); this.noise(.25, .3, 300, 'lowpass'); },
+  clash() { this.ring(560 + Math.random() * 380, .8, .09); this.tone(1500, .2, 'square', .025, 900); this.noise(.12, .3, 4200, 'highpass'); },
+  thud() { this.tone(110, .35, 'sine', .45, 40); this.noise(.25, .3, 300, 'lowpass'); this.noise(.06, .25, 1400, 'bandpass'); if (Math.random() < .5) this.grunt(); },
+  grunt() { this.tone(150 + Math.random() * 60, .22, 'sawtooth', .05, 85); this.noise(.16, .07, 700, 'bandpass'); },
+  shing() { this.noise(.35, .12, 6000, 'highpass'); this.tone(2600, .4, 'sine', .035, 5200); this.ring(1300, .5, .03, .05); },
+  horn() { this.always(() => { [[146.8, 0], [220, .02], [293.7, .5]].forEach(([f, dl]) => { this.tone(f * .97, 1.1, 'sawtooth', .06, f, dl); this.tone(f, 1.0, 'triangle', .07, f * 1.01, dl); }); }); },
+  cheer() {
+    if (!this.on || !this.ac || state.skip) return;
+    for (let i = 0; i < 26; i++) this.noise(.25 + Math.random() * .5, .035 + Math.random() * .03, 500 + Math.random() * 1600, 'bandpass', Math.random() * 1.1);
+    for (let i = 0; i < 5; i++) this.tone(220 + Math.random() * 200, .3, 'sawtooth', .012, 300 + Math.random() * 250, Math.random() * .7);
+  },
   magic() { this.tone(500, .45, 'sine', .15, 1400); this.tone(750, .45, 'triangle', .08, 2100); },
   zap() { this.noise(.35, .25, 3000, 'highpass'); this.tone(70, .35, 'sawtooth', .12, 50); },
   die() { this.tone(320, .6, 'triangle', .14, 90); },
@@ -545,6 +574,138 @@ const SND = {
   splash() { this.noise(.8, .2, 3500, 'highpass'); },
   screech() { this.tone(1200, .6, 'sawtooth', .05, 2400); this.tone(1800, .5, 'sine', .06, 900, .1); }
 };
+
+// ======================= MUSIC =======================
+// Two original themes composed in code and played by a look-ahead sequencer:
+// "camp" (calm lute + flute while you think) and "war" (taiko drums, strings, brass during duels).
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+function mvOsc(dest, type, m, t, d, v, o = {}) {
+  const ac = SND.ac, os = ac.createOscillator(), g = ac.createGain();
+  os.type = type; os.frequency.value = mtof(m); if (o.det) os.detune.value = o.det;
+  const a = o.att || 0.008, r = o.rel || 0.1;
+  if (o.vib) { const l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = 5.3; lg.gain.value = o.vib; l.connect(lg); lg.connect(os.detune); l.start(t); l.stop(t + d + r + 0.05); }
+  let out = os;
+  if (o.lp) {
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = o.q || 0.7;
+    if (o.lpEnv) { f.frequency.setValueAtTime(o.lp * 0.35, t); f.frequency.exponentialRampToValueAtTime(o.lp * 1.7, t + 0.07); f.frequency.exponentialRampToValueAtTime(o.lp, t + 0.3); }
+    else f.frequency.value = o.lp;
+    os.connect(f); out = f;
+  }
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a);
+  if (o.pluck) { g.gain.exponentialRampToValueAtTime(0.0001, t + d); }
+  else { g.gain.setValueAtTime(v, t + Math.max(a, d - r)); g.gain.exponentialRampToValueAtTime(0.0001, t + d + r); }
+  out.connect(g); g.connect(dest); os.start(t); os.stop(t + d + r + 0.05);
+}
+function mvDrum(dest, t, f1, f2, d, v) {
+  const ac = SND.ac, os = ac.createOscillator(), g = ac.createGain();
+  os.frequency.setValueAtTime(f1, t); os.frequency.exponentialRampToValueAtTime(f2, t + d * 0.8);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  os.connect(g); g.connect(dest); os.start(t); os.stop(t + d + 0.05);
+}
+function mvNoise(dest, t, d, v, freq, type = 'bandpass') {
+  const ac = SND.ac, src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = SND.nb; f.type = type; f.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+  src.connect(f); f.connect(g); g.connect(dest); src.start(t, Math.random() * 0.5); src.stop(t + d + 0.05);
+}
+const MAJ = [0, 4, 7], MIN = [0, 3, 7];
+const THEMES = {
+  camp: {
+    bpm: 88,
+    chords: [[50, MIN], [48, MAJ], [46, MAJ], [45, MAJ]], // Dm C Bb A
+    mel: [
+      [[0, 74, 2], [2, 77, 2], [4, 76, 1], [5, 74, 1], [6, 72, 2], [8, 72, 3], [11, 74, 1], [12, 76, 2], [14, 79, 2], [16, 77, 3], [19, 76, 1], [20, 74, 2], [22, 72, 2], [24, 73, 4], [28, 76, 2], [30, 73, 2]],
+      [[0, 81, 3], [3, 79, 1], [4, 77, 2], [6, 76, 2], [8, 76, 2], [10, 72, 2], [12, 74, 2], [14, 76, 2], [16, 74, 2], [18, 77, 2], [20, 74, 2], [22, 70, 2], [24, 69, 6], [30, 73, 2]]
+    ],
+    play(step, t, out, sd) {
+      const s = step % 32, cyc = Math.floor(step / 32), bar = s >> 3, b = s & 7, [root, q] = this.chords[bar];
+      const ch = q.map(i => root + i);
+      if (b === 0) {
+        ch.forEach(m => mvOsc(out, 'triangle', m + 12, t, sd * 8, 0.022, { att: 0.35, rel: 0.5, lp: 1400 }));
+        mvOsc(out, 'triangle', root - 12, t, sd * 3.6, 0.075, { rel: 0.2 });
+        mvDrum(out, t, 120, 58, 0.32, 0.22);
+      }
+      if (b === 4) { mvOsc(out, 'triangle', root - 5, t, sd * 3.6, 0.055, { rel: 0.2 }); mvDrum(out, t, 110, 60, 0.25, 0.1); }
+      if (b === 3 || b === 6) mvNoise(out, t, 0.06, 0.045, 2300);
+      const arp = [0, 1, 2, 3, 2, 1, 2, 1][b], am = (arp === 3 ? root + 12 : ch[arp]) + 12;
+      mvOsc(out, 'triangle', am, t, 0.55, 0.045, { pluck: true });
+      mvOsc(out, 'sine', am + 12, t, 0.3, 0.012, { pluck: true });
+      if (cyc % 4 !== 3) {
+        for (const [st, m, len] of this.mel[cyc % 2]) if (st === s) {
+          mvOsc(out, 'sine', m, t, sd * len * 0.95, 0.055, { att: 0.06, rel: 0.15, vib: 9 });
+          mvOsc(out, 'triangle', m - 12, t, sd * len * 0.95, 0.012, { att: 0.06, rel: 0.15 });
+        }
+      }
+    }
+  },
+  war: {
+    bpm: 152,
+    chords: [[38, MIN], [38, MIN], [34, MAJ], [36, MAJ], [38, MIN], [38, MIN], [31, MIN], [33, MAJ]], // Dm Dm Bb C Dm Dm Gm A
+    mel: [[0, 62, 4], [4, 65, 2], [6, 69, 2], [8, 67, 3], [11, 65, 1], [12, 64, 2], [14, 62, 2], [16, 65, 4], [20, 70, 2], [22, 69, 2], [24, 67, 6], [30, 64, 2],
+      [32, 62, 2], [34, 65, 2], [36, 69, 3], [39, 74, 1], [40, 72, 3], [43, 70, 1], [44, 69, 4], [48, 70, 3], [51, 69, 1], [52, 67, 2], [54, 65, 2], [56, 64, 6], [62, 61, 2]],
+    play(step, t, out, sd) {
+      const s = step % 64, cyc = Math.floor(step / 64), bar = s >> 3, b = s & 7, [root, q] = this.chords[bar];
+      const ch = q.map(i => root + i);
+      // taiko-style drums
+      if (b === 0 || b === 3 || b === 6) mvDrum(out, t, 130, 42, 0.42, b === 0 ? 0.5 : 0.34);
+      if (b === 0 || b === 3 || b === 6) mvNoise(out, t, 0.12, 0.08, 260, 'lowpass');
+      if (b === 4) mvDrum(out, t, 240, 120, 0.2, 0.2);
+      if (b === 2 || b === 6) { mvNoise(out, t, 0.14, 0.11, 1900); mvDrum(out, t, 210, 160, 0.08, 0.06); }
+      mvNoise(out, t, 0.035, b % 2 ? 0.018 : 0.03, 8000, 'highpass');
+      if (bar % 4 === 3 && b >= 6) mvDrum(out, t + sd / 2, 200, 110, 0.16, 0.17);
+      if (s === 0) mvNoise(out, t, 1.8, 0.07, 6500, 'highpass');
+      // driving string ostinato
+      const os = root + 12 + [0, 0, 12, 0, 7, 0, 12, 0][b], acc = b === 0 || b === 4 ? 0.07 : 0.045;
+      mvOsc(out, 'sawtooth', os, t, 0.2, acc, { pluck: true, lp: 1500 });
+      mvOsc(out, 'sawtooth', os, t, 0.2, acc * 0.6, { pluck: true, lp: 1500, det: 9 });
+      if (b === 0) mvOsc(out, 'sawtooth', root, t, sd * 7.5, 0.08, { lp: 420, rel: 0.1 });
+      // brass stabs on the drum hits
+      if (b === 0 || b === 3 || b === 6) {
+        const len = sd * (b === 0 ? 2.6 : b === 3 ? 1.1 : 1.8);
+        ch.forEach(m => { mvOsc(out, 'sawtooth', m + 24, t, len, 0.024, { lp: 1700, lpEnv: true, att: 0.03, det: -7 }); mvOsc(out, 'sawtooth', m + 24, t, len, 0.02, { lp: 1700, lpEnv: true, att: 0.03, det: 7 }); });
+      }
+      if (cyc % 2 === 1) {
+        for (const [st, m, len] of this.mel) if (st === s) {
+          mvOsc(out, 'sawtooth', m + 12, t, sd * len * 0.95, 0.05, { lp: 2000, att: 0.04, rel: 0.12, vib: 7 });
+          mvOsc(out, 'triangle', m + 24, t, sd * len * 0.95, 0.018, { att: 0.04, rel: 0.12 });
+        }
+      } else if (b === 0) {
+        ch.forEach(m => mvOsc(out, 'triangle', m + 36, t, sd * 8, 0.022, { att: 0.3, rel: 0.4, vib: 6 }));
+      }
+    }
+  }
+};
+const MUS = {
+  on: true, vol: 0.54, mode: 'camp', step: 0, nextT: 0, timer: null, bus: null, g: {},
+  setup() {
+    const ac = SND.ac;
+    this.bus = ac.createGain(); this.bus.gain.value = this.on ? this.vol : 0; this.bus.connect(SND.master);
+    const send = ac.createGain(); send.gain.value = 0.3; this.bus.connect(send); send.connect(SND.verb);
+    for (const k of Object.keys(THEMES)) { this.g[k] = ac.createGain(); this.g[k].gain.value = k === this.mode ? 1 : 0; this.g[k].connect(this.bus); }
+    this.nextT = ac.currentTime + 0.15;
+    this.timer = setInterval(() => this.tick(), 30);
+  },
+  apply() { if (this.bus) this.bus.gain.setTargetAtTime(this.on ? this.vol : 0, SND.ac.currentTime, 0.15); },
+  set(mode) {
+    if (!this.bus || mode === this.mode) { this.mode = mode; return; }
+    const t = SND.ac.currentTime;
+    this.g[this.mode].gain.setTargetAtTime(0, t, 0.3);
+    this.g[mode].gain.cancelScheduledValues(t); this.g[mode].gain.setTargetAtTime(1, t, 0.03);
+    this.mode = mode; this.step = 0; this.nextT = t + 0.05;
+  },
+  tick() {
+    const ac = SND.ac;
+    if (!ac || ac.state !== 'running') return;
+    if (!this.on) { this.nextT = ac.currentTime + 0.1; return; }
+    if (this.nextT < ac.currentTime - 0.25) this.nextT = ac.currentTime + 0.05; // recover after the tab was throttled
+    while (this.nextT < ac.currentTime + 0.2) {
+      const th = THEMES[this.mode], sd = 60 / th.bpm / 2;
+      th.play(this.step, this.nextT, this.g[this.mode], sd);
+      this.nextT += sd; this.step++;
+    }
+  }
+};
+document.addEventListener('visibilitychange', () => { if (!SND.ac) return; document.hidden ? SND.ac.suspend() : SND.ac.resume(); });
 
 // ======================= STATE =======================
 const game = new Chess();
@@ -1868,6 +2029,7 @@ async function battle(a, v, dst) {
     side = screenFacing(a.x, a.z, v.x, v.z) || a.facing;
   }
   a.facing = side; v.facing = -side;
+  if (!quick && !state.skip) { MUS.set('war'); SND.horn(); if (!ranged) setTimeout(() => SND.shing(), 450); }
   await camFocus((a.x + v.x) / 2, (a.z + v.z) / 2, true);
   if (!quick) {
     if (RANK[ak] < RANK[vk]) {
@@ -1895,8 +2057,10 @@ async function battle(a, v, dst) {
   } else await sleep(150);
   await finish(a, v, side);
   actors = actors.filter(x => x !== v);
+  SND.cheer();
   await sleep(150);
   if (!quick && Math.random() < 0.6) { say(a, line(a, 'win'), 900); await hop(a, 0.14, 260); }
+  MUS.set('camp');
   await Promise.all([camFocus(0, 0, false), walkTo(a, dst.x, dst.z)]);
   if (a.form) await morph(a, 0);
 }
@@ -2243,7 +2407,16 @@ if (window.innerWidth < 700) document.querySelectorAll('details.coll').forEach(d
 $('sFight').onchange = e => { state.fights = e.target.value; state.skip = state.fights === 'off'; };
 $('tEleph').onchange = e => { state.elephant = e.target.checked; };
 $('tClose').onchange = e => { state.closeup = e.target.checked; };
-$('tSound').onchange = e => { SND.on = e.target.checked; };
+$('tSound').onchange = e => { SND.on = e.target.checked; savePrefs(); };
+$('tMusic').onchange = e => { SND.init(); MUS.on = e.target.checked; MUS.apply(); savePrefs(); };
+$('cMVol').oninput = e => { SND.init(); MUS.vol = e.target.value / 100 * 0.9; MUS.apply(); savePrefs(); };
+function savePrefs() { try { localStorage.setItem('wb-audio', JSON.stringify({ s: SND.on, m: MUS.on, v: +$('cMVol').value })); } catch (e) {} }
+try {
+  const p = JSON.parse(localStorage.getItem('wb-audio') || 'null');
+  if (p) { SND.on = $('tSound').checked = !!p.s; MUS.on = $('tMusic').checked = !!p.m; $('cMVol').value = p.v; MUS.vol = p.v / 100 * 0.9; }
+} catch (e) {}
+// start the music on the first touch or click anywhere (browsers need a gesture before audio)
+window.addEventListener('pointerdown', () => SND.init(), { once: true });
 $('tPixel').onchange = e => { state.pixel = e.target.checked; };
 window.addEventListener('resize', () => { resize(); });
 

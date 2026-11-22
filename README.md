@@ -30,7 +30,8 @@ Inspired by the animated "battle chess" games of the late-80s DOS era, with orig
 - The camera zooms in on each battle. Battles can be set to full duels, epic duels, quick, or off.
 - Works on phones: full-width board, a floating status bar with Undo / rotate / menu, tap to move, drag to orbit, pinch to zoom.
 - Smooth high-resolution art (default) or a pixel-art style.
-- Synthesized sound effects, undo, move list, captured pieces, option to skip battle animations.
+- Original music composed in code: a calm lute-and-flute camp theme while you think, switching to a war theme (taiko drums, strings, brass) during duels. Separate toggles for music and effects, plus a volume slider.
+- Synthesized sound effects with hall reverb: ringing blade clashes, war horn, grunts, crowd cheers, undo, move list, captured pieces, option to skip battle animations.
 
 ## How it's built
 
@@ -38,7 +39,7 @@ Everything is in `index.html`:
 
 - **Chess engine** (the `<script id="engine">` block): written from scratch for this project. Board array, legal-move generation with check filtering, verified with perft (20 / 400 / 8,902 / 197,281 nodes at depths 1–4). The AI is alpha-beta negamax with quiescence search and MVV-LVA move ordering. The piece-square tables come from Tomasz Michniewski's *Simplified Evaluation Function* ([Chess Programming Wiki](https://www.chessprogramming.org/Simplified_Evaluation_Function)).
 - **Renderer**: Canvas 2D with a perspective orbit camera. Characters are drawn procedurally from shapes and gradients (no image files). Pixel mode renders the scene at low resolution and scales it up with nearest-neighbour filtering.
-- **Sound**: Web Audio API, all synthesized.
+- **Sound and music**: Web Audio API, all synthesized live (no audio files). A look-ahead sequencer plays the two themes and crossfades between them.
 
 The engine also runs under Node (`module.exports = { Chess }`) for testing.
 
