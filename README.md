@@ -14,7 +14,7 @@ Inspired by the animated "battle chess" games of the late-80s DOS era, with orig
 |---|---|---|
 | Pawn | Spearman with sun shield | Orc spearman with barbed spear |
 | Knight | Lancer on an armored horse | Orc rider on a war wolf |
-| Bishop | Wizard with a crystal staff (magic bolt) | Antlered shaman with a skull staff (fire bolt) |
+| Bishop | Armored war elephant with rider (or a wizard, if you switch elephants off) | War mammoth with bone spikes (or an antlered shaman) |
 | Rook | Stone siege tower with battering ram | Spiked wooden siege tower |
 | Queen | Sorceress (lightning) | Orc shaman queen (lightning) |
 | King | Crowned knight-king with sword | Horned warchief with great axe |
@@ -24,7 +24,9 @@ Inspired by the animated "battle chess" games of the late-80s DOS era, with orig
 - Full chess rules: castling, en passant, promotion, check, checkmate, stalemate, 50-move rule, threefold repetition, insufficient material.
 - Computer opponent with three levels (Recruit, Captain, Warlord), or two players on one screen.
 - Orbit camera: drag to rotate and tilt, scroll to zoom, or use the Height / Rotate / Zoom sliders and Top-down / Battle / Reset presets.
-- Pixel-art style (default) or smooth style.
+- Duels depend on who fights whom: the number of exchanges grows with the defender, underdogs get knocked down first, spellcasters trade spells in mid-air, and each attacker has its own finishing move (lance charge, trunk toss and stomp, battering ram, lightning, three-cut combo). Towers crumble instead of falling.
+- The camera zooms in on each battle. Battles can be set to full duels, quick, or off.
+- Smooth high-resolution art (default) or a pixel-art style.
 - Synthesized sound effects, undo, move list, captured pieces, option to skip battle animations.
 
 ## How it's built

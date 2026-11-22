@@ -47,6 +47,7 @@ label.tog{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mut
 .sl{display:grid;grid-template-columns:56px 1fr;align-items:center;font-size:13px;color:var(--muted)}
 .sl input{width:100%;accent-color:var(--gold)}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.row3 button{font-size:12px;padding:6px 4px}
+select{font:inherit;font-size:13px;background:#323949;color:var(--text);border:1px solid #454d60;border-radius:6px;padding:5px 6px}
 canvas#board{touch-action:none}
 #moves{height:150px}
 @media (max-width:900px){#app{flex-direction:column;padding:10px}#panel{width:100%}}
@@ -107,10 +108,12 @@ canvas#board{touch-action:none}
       <div class="row3"><button id="vTop">Top-down</button><button id="vBattle">Battle</button><button id="vReset">Reset</button></div>
       <div class="hint">Drag the board to orbit, scroll to zoom.</div>
     </div>
-    <label class="tog"><input type="checkbox" id="tPixel" checked> Pixel-art style</label>
-    <label class="tog"><input type="checkbox" id="tSkip"> Skip battle animations</label>
+    <label class="tog"><input type="checkbox" id="tEleph" checked> War elephants as bishops</label>
+    <label class="tog"><input type="checkbox" id="tClose" checked> Zoom in on battles</label>
+    <label class="tog"><input type="checkbox" id="tPixel"> Pixel-art style</label>
+    <label class="sl" style="grid-template-columns:auto 1fr;gap:8px"><span>Battles</span><select id="sFight"><option value="full">Full duels</option><option value="quick">Quick</option><option value="off">Off</option></select></label>
     <label class="tog"><input type="checkbox" id="tSound" checked> Sound</label>
-    <div class="hint">Click a soldier, then click a highlighted square. Silver Legion (humans) vs Iron Horde (orcs): spearmen = pawns, riders = knights, mages/shamans = bishops, siege towers = rooks, sorceress = queen, crowned warlord = king.</div>
+    <div class="hint">Click a soldier, then click a highlighted square. Silver Legion (humans) vs Iron Horde (orcs): spearmen = pawns, riders = knights, war elephants (or mages) = bishops, siege towers = rooks, sorceress = queen, crowned warlord = king.</div>
   </aside>
 </div>
 
@@ -521,7 +524,7 @@ const SND = {
 // ======================= STATE =======================
 const game = new Chess();
 const state = {
-  mode: 'ai', human: 'w', level: 1, skip: false, pixel: true,
+  mode: 'ai', human: 'w', level: 1, skip: false, pixel: false, elephant: true, closeup: true, fights: 'full',
   started: false, busy: false, thinking: false, over: null,
   sel: -1, selId: null, targets: [], last: null, hover: -1, gen: 0
 };
@@ -542,9 +545,9 @@ const cvs = document.getElementById('board'), ctx = cvs.getContext('2d');
 const bg = document.createElement('canvas'), bctx = bg.getContext('2d');
 const lo = document.createElement('canvas'), lctx = lo.getContext('2d');
 let W = 800, H = 600, DPR = 1, PXK = 3;
-const GROUND = -0.32, RIM = 0.4, CH = 1.12;
+const GROUND = -0.32, RIM = 0.4, CH = 1.25;
 const PMIN = 20 * Math.PI / 180, PMAX = 86 * Math.PI / 180, PDEF = 58 * Math.PI / 180;
-const CAM = { yaw: 0, pitch: PDEF, zoom: 1 };
+const CAM = { yaw: 0, pitch: PDEF, zoom: 1, tx: 4, tz: 4, fk: 0 };
 const CV = { ex: 0, ey: 0, ez: 0, fx: 0, fy: 0, fz: 0, rx: 0, rz: 0, ux: 0, uy: 0, uz: 0, focal: 1, offX: 0, offY: 0 };
 let camDirty = true, camAnim = null;
 
@@ -564,8 +567,9 @@ function computeCam() {
     const A = cx / cz, B = -cy / cz;
     minA = Math.min(minA, A); maxA = Math.max(maxA, A); minB = Math.min(minB, B); maxB = Math.max(maxB, B);
   }
-  const focal = Math.min(W * 0.95 / (maxA - minA), H * 0.9 / (maxB - minB)) * CAM.zoom;
+  const focal = Math.min(W * 0.95 / (maxA - minA), H * 0.9 / (maxB - minB)) * CAM.zoom * (1 + CAM.fk * 0.9);
   CV.focal = focal; CV.offX = -focal * (minA + maxA) / 2; CV.offY = -focal * (minB + maxB) / 2;
+  if (CAM.fk > 0) { const p = proj(CAM.tx, CAM.tz, 0.45); CV.offX += CAM.fk * (W / 2 - p[0]); CV.offY += CAM.fk * (H * 0.55 - p[1]); }
 }
 function proj(x, z, y = 0) {
   const vx = x - CV.ex, vy = y - CV.ey, vz = z - CV.ez;
@@ -776,7 +780,7 @@ function syncActors(resetFacing) {
     let a = actorById(p.id);
     if (!a) a = makeActor(p, s);
     const w = sqToWorld(s);
-    Object.assign(a, { type: p.t, color: p.c, x: w.x, z: w.z, walk: 0, lift: 0, atk: 0, rot: 0, alpha: 1 });
+    Object.assign(a, { type: p.t, color: p.c, x: w.x, z: w.z, walk: 0, lift: 0, atk: 0, rot: 0, alpha: 1, sx: 1, sy: 1, spin: 0 });
     if (resetFacing) a.facing = defaultFacing(p.c, w.x, w.z);
     next.push(a);
   }
@@ -1085,6 +1089,66 @@ function drawKing(c, p, a, now) {
   c.restore();
   Lf(c, 0.02, -0.48, hx, hy, 0.065, p.armor); Cf(c, hx, hy, 0.036, p.armorDark);
 }
+function drawElephant(c, p, a, now) {
+  const g = a.walk, L = lunge(a.atk);
+  c.scale(0.86, 0.86);
+  c.translate(Math.max(0, L) * 0.12, 0);
+  const col = p.horde ? '#75614f' : '#b4b8c2', dk = shade(col, -.22);
+  const leg = (x, ph, cl) => {
+    const s = Math.sin(g + ph) * 0.05;
+    Lf(c, x, -0.42, x + s, -0.07, 0.125, cl); Ef(c, x + s, -0.04, 0.078, 0.04, shade(cl, -.15));
+    for (let i = 0; i < 3; i++) Cf(c, x + s + 0.02 + i * 0.025, -0.022, 0.012, p.bone, false);
+  };
+  leg(0.15, Math.PI, dk); leg(-0.22, Math.PI * 1.5, dk);
+  const tw = Math.sin(g) * 0.03;
+  Lf(c, -0.34, -0.62, -0.41, -0.4 + tw, 0.025, dk); Cf(c, -0.41, -0.38 + tw, 0.022, p.mane, false);
+  Ef(c, -0.03, -0.56, 0.34, 0.235, vgr(c, -0.8, -0.32, col));
+  leg(0.21, 0, col); leg(-0.15, Math.PI * 0.5, col);
+  // war blanket
+  Pf(c, [-0.24, -0.79, 0.12, -0.79, 0.15, -0.44, -0.27, -0.44], vgr(c, -0.79, -0.44, p.cloth));
+  Lf(c, -0.27, -0.45, 0.15, -0.45, 0.03, p.trim);
+  for (let i = 0; i < 5; i++) Pf(c, [-0.25 + i * 0.08, -0.44, -0.21 + i * 0.08, -0.37, -0.17 + i * 0.08, -0.44], p.trim, false);
+  if (p.horde) { Cf(c, -0.06, -0.61, 0.05, p.bone); Cf(c, -0.078, -0.615, 0.012, '#111', false); Cf(c, -0.042, -0.615, 0.012, '#111', false); }
+  else { Cf(c, -0.06, -0.61, 0.045, p.trim); for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4; Lf(c, -0.06 + Math.cos(an) * 0.055, -0.61 + Math.sin(an) * 0.055, -0.06 + Math.cos(an) * 0.08, -0.61 + Math.sin(an) * 0.08, 0.012, p.trim, false); } }
+  // rider
+  Lf(c, -0.02, -0.92, 0.13, -1.02, 0.02, p.wood); Pf(c, [0.11, -1.05, 0.17, -1.03, 0.12, -0.99], p.blade);
+  Pf(c, [-0.13, -0.98, 0.01, -0.98, 0.03, -0.78, -0.15, -0.78], cyl(c, -0.15, 0.03, p.armor));
+  head(c, p, -0.05, -1.06, 0.085);
+  p.horde ? helmHorde(c, p, -0.05, -1.06, 0.085) : helmLegion(c, p, -0.05, -1.06, 0.085);
+  // head
+  const hx = 0.3, hy = -0.68;
+  Cf(c, hx, hy, 0.2, rgr(c, hx, hy, 0.2, col));
+  // trunk: raised on wind-up, slammed forward on strike
+  const up = clamp(-L * 2, 0, 1), fw = Math.max(0, L);
+  const bx = hx + 0.14, by = hy + 0.04;
+  const tx = 0.5 + up * 0.14 + fw * 0.3, ty = -0.2 - up * 0.82 - fw * 0.18 + Math.sin(now / 600 + a.id) * 0.015;
+  const qx = 0.58 + up * 0.14 + fw * 0.12, qy = -0.42 - up * 0.2 - fw * 0.3;
+  c.save(); c.lineCap = 'round'; c.beginPath(); c.moveTo(bx, by); c.quadraticCurveTo(qx, qy, tx, ty);
+  c.strokeStyle = 'rgba(22,16,10,.8)'; c.lineWidth = 0.1 + OUTW * 1.6; c.stroke();
+  c.strokeStyle = col; c.lineWidth = 0.1; c.stroke();
+  c.strokeStyle = shade(col, .2); c.lineWidth = 0.03; c.stroke();
+  c.restore();
+  // tusk
+  c.beginPath(); c.moveTo(hx + 0.1, hy + 0.12); c.quadraticCurveTo(hx + 0.26, hy + 0.27, hx + 0.39, hy + 0.09);
+  c.quadraticCurveTo(hx + 0.25, hy + 0.2, hx + 0.13, hy + 0.06); c.closePath(); c.fillStyle = p.bone; c.fill(); c.stroke();
+  if (p.horde) Lf(c, hx + 0.3, hy + 0.17, hx + 0.33, hy + 0.14, 0.035, p.armorDark, false);
+  else Lf(c, hx + 0.3, hy + 0.17, hx + 0.33, hy + 0.14, 0.035, p.trim, false);
+  // ear
+  const fl = Math.sin(now / 500 + a.id) * 0.015;
+  Ef(c, hx - 0.13, hy - 0.02, 0.11 + fl, 0.17, vgr(c, hy - 0.19, hy + 0.15, shade(col, -.08)), -0.15);
+  Ef(c, hx - 0.13, hy, 0.06 + fl, 0.11, shade(col, -.28), -0.15, false);
+  // eye
+  Cf(c, hx + 0.09, hy - 0.05, 0.024, '#fff', false); Cf(c, hx + 0.098, hy - 0.048, 0.013, p.horde ? '#e0281a' : '#222', false);
+  // head armor
+  if (!p.horde) {
+    Pf(c, [hx - 0.04, hy - 0.2, hx + 0.12, hy - 0.17, hx + 0.2, hy - 0.03, hx + 0.12, hy - 0.1, hx + 0.02, hy - 0.11], cyl(c, hx - 0.04, hx + 0.2, p.armor));
+    Cf(c, hx + 0.08, hy - 0.14, 0.02, p.cloth, false);
+  } else {
+    Pf(c, [hx - 0.02, hy - 0.19, hx + 0.03, hy - 0.32, hx + 0.07, hy - 0.18], p.bone);
+    Pf(c, [hx + 0.07, hy - 0.17, hx + 0.13, hy - 0.28, hx + 0.15, hy - 0.13], p.bone);
+    Lf(c, hx + 0.02, hy - 0.12, hx + 0.16, hy - 0.02, 0.022, p.cloth, false);
+  }
+}
 const DRAW = { p: drawPawn, n: drawKnight, b: drawBishop, r: drawRook, q: drawQueen, k: drawKing };
 
 function drawActor(c, a, now) {
@@ -1092,17 +1156,19 @@ function drawActor(c, a, now) {
   c.save(); c.translate(sx, sy); c.scale(k, k);
   const squash = Math.max(0.3, Math.sin(CAM.pitch));
   c.globalAlpha = 0.32 * a.alpha * (1 - Math.min(0.6, a.lift)); c.fillStyle = '#000';
-  const sr = a.type === 'r' || a.type === 'n' ? 0.36 : 0.25;
+  const kd = kindOf(a), sr = kd === 'r' || kd === 'n' || kd === 'e' ? 0.36 : 0.25;
   c.beginPath(); c.ellipse(0, 0, sr, sr * squash * 0.55, 0, 0, Math.PI * 2); c.fill();
   c.globalAlpha = a.alpha;
   let bob = (a.atk || a.rot) ? 0 : Math.sin(now / 420 + a.id) * 0.008;
   if (state.selId === a.id) bob -= Math.abs(Math.sin(now / 170)) * 0.07;
   c.translate(0, -a.lift + bob); c.scale(a.facing, 1);
+  if (a.sx !== undefined && (a.sx !== 1 || a.sy !== 1)) c.scale(a.sx, a.sy);
   if (a.rot) c.rotate(-a.rot);
+  if (a.spin) { c.translate(0, -0.45); c.rotate(a.spin); c.translate(0, 0.45); }
   if (now - a.hitAt < 170 && 'filter' in c) c.filter = 'brightness(2.6)';
   OUTW = state.pixel ? Math.max(0.024, PXK * 0.9 / k) : 0.022;
   c.lineWidth = OUTW; c.strokeStyle = 'rgba(22,16,10,.8)'; c.lineJoin = 'round'; c.lineCap = 'round';
-  DRAW[a.type](c, pal, a, now);
+  (kd === 'e' ? drawElephant : DRAW[a.type])(c, pal, a, now);
   c.restore();
 }
 
@@ -1177,7 +1243,7 @@ function walkTo(a, x, z, hop = false) {
   const x0 = a.x, z0 = a.z, dx = x - x0, dz = z - z0, d = Math.hypot(dx, dz);
   if (d < 0.01) return Promise.resolve();
   const sf = screenFacing(x0, z0, x, z); if (sf) a.facing = sf;
-  const isR = a.type === 'r';
+  const isR = a.type === 'r' || kindOf(a) === 'e';
   const ms = hop ? 420 + d * 110 : 150 + d * (isR ? 430 : 330);
   const w0 = a.walk, wh0 = a.wheel; let lastStep = Math.floor(w0 / Math.PI);
   return tween(ms, t => {
@@ -1202,41 +1268,101 @@ function hit(att, vic, kind) {
   const kx = vic.x, kz = vic.z, push = 0.08 * att.facing;
   tween(160, t => { const o = push * Math.sin(Math.PI * t); vic.x = kx + CV.rx * o; vic.z = kz + CV.rz * o; });
 }
-async function counterSwing(v, a) {
-  let fired = false;
-  SND.whoosh();
-  await tween(560, t => {
-    v.atk = t;
-    if (!fired && t >= 0.52) {
-      fired = true;
-      const p1 = actorPoint(v, [0.3, -0.5]), p2 = actorPoint(a, [0.3, -0.5]);
-      burst((p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, 14, ['#fff6c8', '#ffd24a', '#ffffff'], p1[2] * 3, 0.4, p1[2] * 5, p1[2] * 0.03);
-      SND.clash();
-    }
-  });
-  v.atk = 0;
+// ---------- fight toolkit ----------
+const kindOf = a => a.type === 'b' ? (state.elephant ? 'e' : 'm') : a.type;
+const isRanged = k => k === 'm' || k === 'q';
+const RANK = { p: 1, n: 3, m: 3, e: 3, r: 5, q: 9, k: 10 };
+const ROUNDS = { p: 1, n: 2, m: 2, e: 2, r: 2, q: 3, k: 3 };
+let shakeUntil = 0, shakeMag = 0;
+function shake(mag, ms) { if (state.skip) return; shakeMag = mag; shakeUntil = performance.now() + ms; }
+function sparks(x, y, s, n = 14) { burst(x, y, n, ['#fff6c8', '#ffd24a', '#ffffff'], s * 3.2, 0.42, s * 5, s * 0.032); }
+function midPoint(a, v) { const p1 = actorPoint(a, [0.3, -0.5]), p2 = actorPoint(v, [0.3, -0.5]); return [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, p1[2]]; }
+function slide(a, d, ms, lift = 0, ease = easeOut) { // d: signed distance along screen-right
+  const x0 = a.x, z0 = a.z;
+  return tween(ms, t => { const e = ease(t); a.x = x0 + CV.rx * d * e; a.z = z0 + CV.rz * d * e; a.lift = lift * Math.sin(Math.PI * t); if (t >= 1) a.lift = 0; });
 }
-async function attack(a, v) {
-  const T = { p: 700, n: 760, b: 820, r: 820, q: 860, k: 820 }[a.type];
-  let after = null, fired = false;
-  SND.whoosh();
-  await tween(T, t => {
-    a.atk = t;
-    if (!fired && t >= 0.5) {
-      fired = true;
-      switch (a.type) {
-        case 'b': after = fxBolt(a, v).then(() => hit(a, v, 'magic')); break;
-        case 'q': after = fxLightning(a, v, 450); hit(a, v, 'zap'); break;
-        case 'k': fxSlash(v, a.facing); hit(a, v, 'clash'); break;
-        case 'r': hit(a, v, 'thud'); break;
-        default: hit(a, v, 'clash');
-      }
-    }
-  });
-  a.atk = 0;
-  if (after) await after;
+function lean(a, ang, ms) { return tween(ms, t => { a.rot = ang * Math.sin(Math.PI * t); if (t >= 1) a.rot = 0; }); }
+function hop(a, h, ms) { return tween(ms, t => { a.lift = h * Math.sin(Math.PI * t); if (t >= 1) a.lift = 0; }); }
+function tremble(a, ms) {
+  const x0 = a.x, z0 = a.z;
+  return tween(ms, t => { const o = Math.sin(t * 60) * 0.025; a.x = x0 + CV.rx * o; a.z = z0 + CV.rz * o; if (t >= 1) { a.x = x0; a.z = z0; } });
 }
-async function die(v) {
+function strike(a, ms, onHit, at = 0.5) {
+  let f = false; SND.whoosh();
+  return tween(ms, t => { a.atk = t; if (!f && t >= at) { f = true; if (onHit) onHit(); } if (t >= 1) a.atk = 0; });
+}
+function stepToward(v, a, d) {
+  const dx = a.x - v.x, dz = a.z - v.z, L = Math.hypot(dx, dz), k = Math.min(d, Math.max(0, L - 1.1)) / L;
+  return k > 0.01 ? walkTo(v, v.x + dx * k, v.z + dz * k) : Promise.resolve();
+}
+function cast(a, v) { return kindOf(a) === 'q' ? fxLightning(a, v, 320) : fxBolt(a, v); }
+function magicHit(att, vic) {
+  const [x, y, s] = actorPoint(vic, [0, -0.45]);
+  burst(x, y, 14, [PAL[att.color].magic, '#ffffff'], s * 3, 0.5, s * 4, s * 0.04); SND.magic(); vic.hitAt = performance.now();
+}
+function fxClash(a, v) {
+  const s0 = actorPoint(a, a.tip), s1 = actorPoint(v, v.tip), mx = (s0[0] + s1[0]) / 2, my = (s0[1] + s1[1]) / 2 - s0[2] * 0.2;
+  const ca = PAL[a.color].magic, cv = PAL[v.color].magic;
+  return effect(420, (c, k) => {
+    glow(c, lerp(s0[0], mx, k), lerp(s0[1], my, k), s0[2] * 0.18, ca, 1);
+    glow(c, lerp(s1[0], mx, k), lerp(s1[1], my, k), s0[2] * 0.18, cv, 1);
+  }).then(() => {
+    burst(mx, my, 30, [ca, cv, '#ffffff'], s0[2] * 4, 0.6, s0[2] * 2, s0[2] * 0.05); SND.zap(); shake(4, 200);
+    return effect(300, (c, k) => glow(c, mx, my, s0[2] * (0.3 + k * 0.5), '#ffffff', 1 - k));
+  });
+}
+
+// ---------- exchanges (nobody dies yet) ----------
+async function blockBeat(a, v, side) { // attacker strikes, defender blocks
+  await strike(a, 520, () => {
+    const [x, y, s] = midPoint(a, v); sparks(x, y, s); SND.clash();
+    slide(v, side * 0.1, 200).then(() => slide(v, -side * 0.1, 220)); lean(v, 0.18, 320);
+  });
+}
+async function counterBeat(a, v, side, round) { // defender answers, attacker survives
+  const vk = kindOf(v);
+  if (isRanged(vk)) {
+    let fx = null;
+    await strike(v, 640, () => { fx = cast(v, a); });
+    await fx; magicHit(v, a);
+    await Promise.all([slide(a, -side * 0.18, 220), lean(a, 0.25, 320)]);
+    await slide(a, side * 0.18, 260);
+  } else if (round % 2 === 0) { // attacker jumps back out of reach
+    const dodge = sleep(180).then(() => slide(a, -side * 0.3, 260, 0.18));
+    await strike(v, 520);
+    await dodge; await slide(a, side * 0.3, 240);
+  } else { // attacker parries
+    await strike(v, 520, () => { const [x, y, s] = midPoint(v, a); sparks(x, y, s); SND.clash(); lean(a, 0.15, 280); });
+  }
+}
+async function rangedRound(a, v, round) {
+  const vk = kindOf(v);
+  if (isRanged(vk)) { // spell duel: the two spells collide in mid-air
+    await Promise.all([strike(a, 760), strike(v, 760), sleep(330).then(() => fxClash(a, v))]);
+  } else if (vk === 'p' || round % 2) { // takes it on the shield / armour, then advances
+    let fx = null;
+    await strike(a, 640, () => { fx = cast(a, v); });
+    await fx; magicHit(a, v);
+    await lean(v, 0.2, 300);
+    await stepToward(v, a, 0.45);
+  } else { // leaps over it, then advances
+    let fx = null;
+    const dodge = sleep(300).then(() => hop(v, 0.4, 400));
+    await strike(a, 640, () => { fx = cast(a, v); });
+    await fx; await dodge;
+    await stepToward(v, a, 0.45);
+  }
+}
+async function knockdown(a, v) { // the stronger defender floors the attacker, who gets back up
+  await strike(v, 520, () => { const [x, y, s] = actorPoint(a, [0, -0.45]); sparks(x, y, s); SND.thud(); a.hitAt = performance.now(); shake(4, 180); });
+  await tween(300, t => { a.rot = 1.3 * easeIn(t); });
+  await sleep(450);
+  await tween(380, t => { a.rot = 1.3 * (1 - easeOut(t)); });
+  await hop(a, 0.15, 220);
+}
+
+// ---------- deaths ----------
+async function deathFall(v) {
   SND.die();
   let landed = false;
   await tween(1050, t => {
@@ -1250,28 +1376,178 @@ async function die(v) {
     }
     v.alpha = t < 0.62 ? 1 : Math.max(0, 1 - (t - 0.62) / 0.38);
   });
-  actors = actors.filter(x => x !== v);
 }
+async function deathLaunch(v, dir, dist) { // knocked spinning off the field
+  SND.die();
+  const x0 = v.x, z0 = v.z;
+  await tween(950, t => {
+    v.x = x0 + CV.rx * dir * dist * t; v.z = z0 + CV.rz * dir * dist * t;
+    v.lift = Math.sin(Math.PI * Math.min(1, t * 1.05)) * 1.1; v.spin = t * 8;
+    v.alpha = t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.3);
+  });
+}
+async function deathSquash(v) { // flattened
+  SND.thud(); shake(8, 320);
+  const [x, y, s] = actorPoint(v, [0, 0]);
+  burst(x, y, 20, ['#9b8a6a', '#c4b494', '#7c6c50'], s * 3, 0.6, s * 2, s * 0.06);
+  await tween(200, t => { v.sy = 1 - 0.86 * easeIn(t); v.sx = 1 + 0.5 * easeIn(t); });
+  await sleep(550);
+  await tween(400, t => { v.alpha = 1 - t; });
+}
+async function deathBurn(v, col) { // burns down to ash
+  SND.die(); v.hitAt = performance.now();
+  await tween(1200, t => {
+    v.sy = 1 - 0.9 * easeIn(t); v.sx = 1 - 0.35 * t; v.alpha = 1 - t * 0.85;
+    if (Math.random() < 0.7) {
+      const [x, y, s] = actorPoint(v, [(Math.random() - .5) * 0.3, -0.7 * (1 - t) * Math.random()]);
+      parts.push({ x, y, vx: (Math.random() - .5) * s * 0.4, vy: -s * (0.5 + Math.random()), life: 0.6, max: 0.6, col: Math.random() < .5 ? col : '#ffd27a', g: -s * 0.5, sz: s * 0.035 });
+    }
+  });
+  const [x, y, s] = actorPoint(v, [0, -0.05]);
+  burst(x, y, 14, ['#5a5550', '#8a847c', '#3a3632'], s * 1.2, 0.8, s * 1.5, s * 0.04);
+  v.alpha = 0; await sleep(300);
+}
+async function deathExplode(v, col) { // blown apart by magic
+  v.hitAt = performance.now();
+  await sleep(140);
+  const [x, y, s] = actorPoint(v, [0, -0.45]);
+  burst(x, y, 46, [col, '#ffffff', '#ffe08a', PAL[v.color].cloth], s * 5, 0.9, s * 4, s * 0.055);
+  SND.zap(); SND.thud(); shake(9, 350);
+  v.alpha = 0;
+  await effect(450, (c, k) => glow(c, x, y, s * (0.3 + k * 0.9), col, 1 - k));
+  await sleep(200);
+}
+async function deathCrumble(v) { // a tower collapses into rubble
+  SND.thud(); shake(6, 600);
+  const x0 = v.x, z0 = v.z;
+  await tween(1000, t => {
+    v.sy = 1 - 0.85 * easeIn(t);
+    const o = Math.sin(t * 70) * 0.02 * (1 - t); v.x = x0 + CV.rx * o; v.z = z0 + CV.rz * o;
+    if (Math.random() < 0.6) {
+      const [x, y, s] = actorPoint(v, [(Math.random() - .5) * 0.5, -1.0 * (1 - t)]);
+      parts.push({ x, y, vx: (Math.random() - .5) * s * 1.5, vy: -s * 0.6 * Math.random(), life: 0.7, max: 0.7, col: Math.random() < .5 ? '#8a7a66' : '#5c5046', g: s * 5, sz: s * 0.045 });
+    }
+  });
+  SND.thud();
+  await tween(450, t => { v.alpha = 1 - t; });
+}
+
+// ---------- finishing moves, by attacker ----------
+async function finish(a, v, side) {
+  const ak = kindOf(a), vk = kindOf(v), magic = PAL[a.color].magic;
+  switch (ak) {
+    case 'p': { // spearman: hop and thrust
+      await hop(a, 0.22, 280);
+      await strike(a, 640, () => hit(a, v, 'clash'));
+      return vk === 'r' ? deathCrumble(v) : deathFall(v);
+    }
+    case 'n': { // rider: back off, then charge with the lance levelled
+      await slide(a, -side * 0.8, 460, 0, easeInOut);
+      await sleep(180);
+      await Promise.all([slide(a, side * 1.05, 300, 0, easeIn), strike(a, 430, () => { hit(a, v, 'thud'); shake(6, 250); }, 0.62)]);
+      if (vk === 'r') return deathCrumble(v);
+      if (vk === 'e') return deathFall(v);
+      return deathLaunch(v, side, 2.4);
+    }
+    case 'e': { // war elephant
+      if (vk === 'r' || vk === 'e') { // too heavy to throw: batter it down
+        await strike(a, 620, () => { hit(a, v, 'thud'); shake(5, 200); });
+        await strike(a, 620, () => { hit(a, v, 'thud'); shake(8, 300); });
+        return vk === 'r' ? deathCrumble(v) : deathFall(v);
+      }
+      // trunk toss, then stomp
+      await strike(a, 720, () => hit(a, v, 'thud'));
+      SND.whoosh();
+      await tween(850, t => { v.lift = Math.sin(Math.PI * t) * 1.35; v.spin = t * Math.PI * 4; if (t >= 1) { v.lift = 0; v.spin = 0; v.rot = 1.45; } });
+      SND.thud(); shake(5, 200);
+      { const [x, y, s] = actorPoint(v, [0, 0]); burst(x, y, 14, ['#9b8a6a', '#c4b494'], s * 2, 0.5, s * 2, s * 0.05); }
+      await sleep(250);
+      await tween(420, t => { a.rot = 0.3 * easeOut(t); a.lift = 0.12 * easeOut(t); });
+      await sleep(120);
+      await Promise.all([tween(150, t => { a.rot = 0.3 * (1 - t); a.lift = 0.12 * (1 - t); }), slide(a, side * 0.3, 150)]);
+      return deathSquash(v);
+    }
+    case 'm': { // mage: long charge-up, then a fire bolt
+      let fx = null;
+      await strike(a, 1100, () => { fx = fxBolt(a, v); });
+      await fx; hit(a, v, 'magic'); shake(4, 200);
+      return vk === 'r' ? deathCrumble(v) : deathBurn(v, magic);
+    }
+    case 'r': { // siege tower: roll back, then ram at speed
+      await slide(a, -side * 0.55, 520, 0, easeInOut);
+      await sleep(140);
+      await Promise.all([slide(a, side * 0.8, 260, 0, easeIn), strike(a, 400, () => { hit(a, v, 'thud'); shake(9, 350); }, 0.62)]);
+      if (vk === 'r') return deathCrumble(v);
+      if (vk === 'e') return deathFall(v);
+      return deathLaunch(v, side, 3.2);
+    }
+    case 'q': { // sorceress: lift the victim and hold them in lightning
+      const heavy = vk === 'r' || vk === 'e';
+      await tween(320, t => { a.atk = 0.45 * t; });
+      if (!heavy) await tween(650, t => { v.lift = 0.65 * easeOut(t); });
+      SND.zap();
+      await Promise.all([fxLightning(a, v, 950), tween(950, t => {
+        v.spin = heavy ? 0 : Math.sin(t * 45) * 0.14;
+        if (Math.sin(t * 45) > 0.6) v.hitAt = performance.now();
+        if (t > 0.5 && Math.random() < 0.1) SND.zap();
+      })]);
+      v.spin = 0;
+      tween(300, t => { a.atk = 0.45 + 0.55 * t; if (t >= 1) a.atk = 0; });
+      if (vk === 'r') return deathCrumble(v);
+      if (vk === 'e') return deathBurn(v, magic);
+      return deathExplode(v, magic);
+    }
+    default: { // king: three-cut combo, the victim kneels and falls
+      for (let i = 0; i < 3; i++) {
+        await strike(a, 470, () => { fxSlash(v, a.facing); hit(a, v, 'clash'); if (i === 2) shake(5, 220); });
+      }
+      if (vk === 'r') return deathCrumble(v);
+      await tween(300, t => { v.sy = 1 - 0.2 * easeOut(t); });
+      await sleep(350);
+      return deathFall(v);
+    }
+  }
+}
+
+function camFocus(x, z, on) {
+  if (state.skip || !state.closeup) return Promise.resolve();
+  const f0 = CAM.fk;
+  if (on) { CAM.tx = x; CAM.tz = z; }
+  return tween(on ? 520 : 480, t => { CAM.fk = lerp(f0, on ? 1 : 0, easeInOut(t)); camDirty = true; });
+}
+
 async function battle(a, v, dst) {
-  const ranged = a.type === 'b' || a.type === 'q';
+  const ak = kindOf(a), vk = kindOf(v), ranged = isRanged(ak), quick = state.fights === 'quick';
   // fighters meet side by side on screen: offset along the camera's right vector
   const along = (v.x - a.x) * CV.rx + (v.z - a.z) * CV.rz;
   let side = Math.sign(along);
   if (Math.abs(along) < 0.1) side = ((v.x - 4) * CV.rx + (v.z - 4) * CV.rz) < 0 ? -1 : 1;
   if (!ranged) {
-    await walkTo(a, v.x - CV.rx * side * 0.74, v.z - CV.rz * side * 0.74);
+    const gap = ak === 'e' || vk === 'e' || ak === 'r' ? 0.86 : 0.74;
+    await walkTo(a, v.x - CV.rx * side * gap, v.z - CV.rz * side * gap);
   } else {
     const d = Math.hypot(v.x - a.x, v.z - a.z);
-    if (d > 3.2) { const k = (d - 2.6) / d; await walkTo(a, a.x + (v.x - a.x) * k, a.z + (v.z - a.z) * k); }
+    if (d > 2.6) { const k = (d - 2.3) / d; await walkTo(a, a.x + (v.x - a.x) * k, a.z + (v.z - a.z) * k); }
     side = screenFacing(a.x, a.z, v.x, v.z) || a.facing;
   }
   a.facing = side; v.facing = -side;
-  await sleep(150);
-  if (!ranged) { await counterSwing(v, a); await sleep(80); }
-  await attack(a, v);
-  await die(v);
-  await sleep(100);
-  await walkTo(a, dst.x, dst.z);
+  await camFocus((a.x + v.x) / 2, (a.z + v.z) / 2, true);
+  if (!quick) {
+    // face-off: who is the underdog?
+    if (RANK[ak] < RANK[vk]) await Promise.all([hop(v, 0.14, 240).then(() => hop(v, 0.14, 240)), tremble(a, 480)]);
+    else if (RANK[ak] > RANK[vk]) await Promise.all([hop(a, 0.16, 280), tremble(v, 520)]);
+    else await Promise.all([hop(a, 0.12, 240), hop(v, 0.12, 240)]);
+    await sleep(140);
+    for (let i = 0; i < ROUNDS[vk]; i++) {
+      if (ranged) await rangedRound(a, v, i);
+      else { await blockBeat(a, v, side); await sleep(90); await counterBeat(a, v, side, i); await sleep(90); }
+    }
+    if (!ranged && !isRanged(vk) && RANK[ak] < RANK[vk]) { await knockdown(a, v); await sleep(120); }
+  } else await sleep(150);
+  await finish(a, v, side);
+  actors = actors.filter(x => x !== v);
+  await sleep(120);
+  await Promise.all([camFocus(0, 0, false), walkTo(a, dst.x, dst.z)]);
 }
 async function animateMove(info) {
   const a = actorById(info.moverId); if (!a) return;
@@ -1332,6 +1608,7 @@ function render(now) {
   const c = state.pixel ? lctx : ctx;
   if (state.pixel) { c.setTransform(1 / PXK, 0, 0, 1 / PXK, 0, 0); c.imageSmoothingEnabled = true; }
   else c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (now < shakeUntil) c.translate((Math.random() - .5) * shakeMag, (Math.random() - .5) * shakeMag);
   c.drawImage(bg, 0, 0, W, H);
   if (state.last) { hl(c, state.last.from, 'rgba(255,220,100,.28)'); hl(c, state.last.to, 'rgba(255,220,100,.36)'); }
   if (!state.busy && game.inCheck()) hl(c, game.kings[game.turn], `rgba(230,40,30,${0.35 + Math.sin(now / 200) * 0.15})`);
@@ -1378,7 +1655,7 @@ function pickPromotion(color) {
     const box = $('promoBtns'); box.innerHTML = '';
     for (const t of ['q', 'r', 'b', 'n']) {
       const b = document.createElement('button'); b.textContent = GLYPH[color][t];
-      b.title = { q: 'Sorceress (queen)', r: 'Siege tower (rook)', b: 'Mage (bishop)', n: 'Rider (knight)' }[t];
+      b.title = { q: 'Sorceress (queen)', r: 'Siege tower (rook)', b: 'War elephant (bishop)', n: 'Rider (knight)' }[t];
       b.onclick = () => { $('ovPromo').classList.add('hidden'); res(t); };
       box.appendChild(b);
     }
@@ -1511,7 +1788,7 @@ function newGame() {
   clearSel();
   game.reset();
   actors = [];
-  camAnim = null; CAM.yaw = homeYaw(); camDirty = true;
+  camAnim = null; CAM.yaw = homeYaw(); CAM.fk = 0; camDirty = true;
   resize(); computeCam();
   syncActors(true);
   $('ovStart').classList.add('hidden'); $('ovEnd').classList.add('hidden'); $('ovPromo').classList.add('hidden');
@@ -1591,7 +1868,9 @@ $('bNew').onclick = () => { SND.init(); $('ovEnd').classList.add('hidden'); $('o
 $('bEndNew').onclick = () => { $('ovEnd').classList.add('hidden'); $('ovStart').classList.remove('hidden'); };
 $('bEndView').onclick = () => $('ovEnd').classList.add('hidden');
 $('bUndo').onclick = undo;
-$('tSkip').onchange = e => { state.skip = e.target.checked; };
+$('sFight').onchange = e => { state.fights = e.target.value; state.skip = state.fights === 'off'; };
+$('tEleph').onchange = e => { state.elephant = e.target.checked; };
+$('tClose').onchange = e => { state.closeup = e.target.checked; };
 $('tSound').onchange = e => { SND.on = e.target.checked; };
 $('tPixel').onchange = e => { state.pixel = e.target.checked; };
 window.addEventListener('resize', () => { resize(); });
